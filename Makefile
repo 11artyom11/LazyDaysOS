@@ -1,14 +1,24 @@
 CC=i686-elf-gcc
 ASM=i686-elf-as
-CFLAGS=-nostdlib -ffreestanding 
+MACROS=__LF
+CFLAGS=-nostdlib -ffreestanding -D $(MACROS)
 KERN_NAME=DudeOS
+C_LIB_SOURCES=c_lib/stdout.c
+
 all: boot_image iso_image test
 
-boot_image:
-	$(ASM) boot.s -o boot.o
-	$(CC) $(CFLAGS) kernel.c -c -o  kernel.o
-	$(CC) -T linker.ld -o $(KERN_NAME).bin $(CFLAGS) -O2  boot.o kernel.o -lgcc
+boot_image: boot.o kernel.o linker.ld c_lib.o
+	$(CC) -T linker.ld -o $(KERN_NAME).bin $(CFLAGS) -O2  boot.o kernel.o c_lib.o -lgcc
 
+boot.o:
+	$(ASM) boot.s -o boot.o
+
+kernel.o:	
+	$(CC) $(CFLAGS) kernel.c -c -o  kernel.o
+
+c_lib.o: 
+	$(CC) $(CFLAGS)  c_lib/stdout.c -fpic  -c -o c_lib.o
+	
 iso_image:
 	mkdir -p isodir/boot/grub
 	cp $(KERN_NAME).bin isodir/boot/$(KERN_NAME).bin
