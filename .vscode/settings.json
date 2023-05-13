@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "ttyo.h": "c",
+        "vgadef.h": "c"
+    }
+}

@@ -1,4 +1,4 @@
-#include "c_lib/stdout.h"
+#include "tty/ttyo.h"
 
 void kernel_main(void) 
 {

@@ -1,25 +1,37 @@
 CC=i686-elf-gcc
 ASM=i686-elf-as
 MACROS=__LF
-CFLAGS=-nostdlib -ffreestanding -D $(MACROS)
 KERN_NAME=DudeOS
-C_LIB_SOURCES=c_lib/stdout.c
+SYS_SRC_DIR=sysroot/usr/lib
+SYS_INC_DIR=sysroot/usr/include
+KERNEL_SRC_DIR=kernel
+INC=-I$(SYS_INC_DIR)
+CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC)
 
-all: boot_image iso_image test
+C_LIB_SOURCES=$(SYS_SRC_DIR)/tty/ttyo.c
+C_LIB_HEADERS=$(SYS_INC_DIR)/tty/* $(SYS_INC_DIR)/vga/* 
 
-boot_image: boot.o kernel.o linker.ld c_lib.o
-	$(CC) -T linker.ld -o $(KERN_NAME).bin $(CFLAGS) -O2  boot.o kernel.o c_lib.o -lgcc
+KERNEL_C_SOURCES=$(KERNEL_SRC_DIR)/kernel.c
+KERNEL_ASM_SOURCES=$(KERNEL_SRC_DIR)/boot.s
+KERNEL_HEADERS=$(KERNEL_SRC_DIR)
 
-boot.o:
-	$(ASM) boot.s -o boot.o
+.PHONY: all kernel iso_image test 
 
-kernel.o:	
-	$(CC) $(CFLAGS) kernel.c -c -o  kernel.o
+all: kernel iso_image test
 
-c_lib.o: 
-	$(CC) $(CFLAGS)  c_lib/stdout.c -fpic  -c -o c_lib.o
+kernel: boot.o kernel.o linker.ld libk.a
+	$(CC) -T linker.ld -o $(KERN_NAME).bin $(CFLAGS) -O2  boot.o kernel.o libk.a -lgcc
+
+boot.o: $(KERNEL_ASM_SOURCES)
+	$(ASM) $(KERNEL_ASM_SOURCES) -o boot.o
+
+kernel.o: $(KERNEL_C_SOURCES) $(KERNEL_HEADERS)
+	$(CC) $(CFLAGS) $(KERNEL_C_SOURCES) -c -o  kernel.o
+
+libk.a: $(C_LIB_SOURCES) $(C_LIB_HEADERS)
+	$(CC) $(CFLAGS)  $(C_LIB_SOURCES) -fpic  -c -o libk.a
 	
-iso_image:
+iso_image: 
 	mkdir -p isodir/boot/grub
 	cp $(KERN_NAME).bin isodir/boot/$(KERN_NAME).bin
 	sh gen_grubcfg.sh isodir/boot/grub/grub.cfg $(KERN_NAME)
@@ -32,6 +44,7 @@ clean:
 	rm -f *.o
 	rm -f *.bin
 	rm -f -r ./isodir
-
+	rm -f *.a
+	
 test:
 	sh test_multiboot.sh ./isodir/boot/$(KERN_NAME).bin
