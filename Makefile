@@ -17,28 +17,28 @@ KERNEL_HEADERS=$(KERNEL_SRC_DIR)
 
 .PHONY: all kernel iso_image test 
 
-all: kernel iso_image test
+all: $(KERN_NAME).bin $(KERN_NAME).iso test
 
-kernel: boot.o kernel.o $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
-	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld -o $(KERN_NAME).bin $(CFLAGS) -O2  boot.o kernel.o libk.a -lgcc
+$(KERN_NAME).bin: boot.o kernel.o $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
+	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2  boot.o kernel.o libk.a -lgcc -o $@
 
 boot.o: $(KERNEL_ASM_SOURCES)
-	$(ASM) $(KERNEL_ASM_SOURCES) -o boot.o
+	$(ASM) $(KERNEL_ASM_SOURCES) -o $@
 
 kernel.o: $(KERNEL_C_SOURCES) $(KERNEL_HEADERS)
-	$(CC) $(CFLAGS) $(KERNEL_C_SOURCES) -c -o  kernel.o
+	$(CC) $(CFLAGS) $(KERNEL_C_SOURCES) -c -o $@
 
 libk.a: $(C_LIB_SOURCES) $(C_LIB_HEADERS)
-	$(CC) $(CFLAGS)  $(C_LIB_SOURCES) -fpic  -c -o libk.a
+	$(CC) $(CFLAGS)  $(C_LIB_SOURCES) -fpic  -c -o $@
 	
-iso_image: 
+$(KERN_NAME).iso: $(KERN_NAME).bin
 	mkdir -p isodir/boot/grub
-	cp $(KERN_NAME).bin isodir/boot/$(KERN_NAME).bin
+	cp $< isodir/boot/$<
 	sh gen_grubcfg.sh isodir/boot/grub/grub.cfg $(KERN_NAME)
-	grub-mkrescue -o $(KERN_NAME).iso isodir
-	cp $(KERN_NAME).iso isodir/boot/$(KERN_NAME).iso
-	rm $(KERN_NAME).bin
-	rm $(KERN_NAME).iso
+	grub-mkrescue -o $@ isodir
+	cp $(KERN_NAME).iso isodir/boot/$@
+	rm $<
+	rm $@
 
 clean:
 	rm -f *.o
