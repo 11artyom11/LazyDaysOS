@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "vga/vgadef.h"
+#include "vgadef.h"
  
 /* Check if the compiler thinks you are targeting the wrong operating system. */
 #if defined(__linux__)

@@ -1,4 +1,4 @@
-#include "tty/ttyo.h"
+#include "tty.h"
 
 void kernel_main(void) 
 {
