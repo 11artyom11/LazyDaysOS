@@ -8,11 +8,10 @@ LIBK_INC_DIR=$(LIBK_SRC_DIR)/include
 KERNEL_SRC_DIR=kernel
 INC=-I$(LIBK_INC_DIR)
 CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC)
-
-C_LIB_SOURCES=$(LIBK_SRC_DIR)/tty/tty.c
-C_LIB_HEADERS=$(LIBK_INC_DIR)/* 
-
-KERNEL_HEADERS=$(KERNEL_SRC_DIR)
+SYSROOT=sysroot
+DESTDIR=$(SYSROOT)/usr
+LIB_DEST=$(DESTDIR)/lib
+INC_DEST=$(DESTDIR)/include
 
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
@@ -21,12 +20,10 @@ KERN_OBJ=boot.o kernel.o
 LIBK_OBJS=tty.o
 VPATH=kernel:libk/tty
 
-
 all: $(KERN_NAME).bin $(KERN_NAME).iso test
 
 $(KERN_NAME).bin: $(KERN_OBJ) $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
 	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2  boot.o kernel.o libk.a -lgcc -o $@
-
 
 libk.a: $(LIBK_OBJS)
 	$(AR) rcs $@ $<
@@ -42,7 +39,7 @@ $(KERN_NAME).iso: $(KERN_NAME).bin
 	cp $< isodir/boot/$<
 	sh gen_grubcfg.sh isodir/boot/grub/grub.cfg $(KERN_NAME)
 	grub-mkrescue -o $@ isodir
-	cp $(KERN_NAME).iso isodir/boot/$@
+	cp $@ isodir/boot/$@
 	rm $<
 	rm $@
 
@@ -51,6 +48,17 @@ clean:
 	rm -f *.bin
 	rm -f -r ./isodir
 	rm -f *.a
+	rm -f -r sysroot
 	
+install: install-libs install-headers
+
+install-libs: libk.a
+	mkdir -p $(LIB_DEST)
+	cp $< --preserve=timestamps	$(LIB_DEST)
+
+install-headers: 
+	mkdir -p $(INC_DEST)
+	cp -R --preserve=timestamps libk/include/. $(INC_DEST)
+
 test:
 	sh test_multiboot.sh ./isodir/boot/$(KERN_NAME).bin
