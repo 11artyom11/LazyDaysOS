@@ -1,0 +1,1 @@
+sudo qemu-system-i386 -kernel isodir/boot/DudeOS.bin

@@ -1,11 +1,9 @@
-#include "tty.h"
-
+#include "kio.h"
 void kernel_main(void) 
 {
+	const char a = 'c';
 	/* Initialize terminal interface */
 	terminal_initialize();
 	
-	/* Newline support is left as an exercise. */
-	terminal_writestring("Hello, kernel World!\n");
-	terminal_writestring("Hello, Second line!\n barxatnie tyagi");
+	k_printf("artyom says hallpo %c::%u::%d", '@', 987, -197);	
 }

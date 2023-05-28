@@ -22,6 +22,16 @@
 	#define __NEWLINE '\n'
 #endif
 
+#define K_PRINT_MAX_BUF (sizeof (long int) * 8)
+
+enum INT_BASE 
+{
+	BINARY = 2,
+	OCTAL = 8,
+	DECIMAL = 10,
+	HEXADECIMAL = 16
+};
+
 size_t strlen(const char* str);
 
 void terminal_initialize(void);
@@ -31,9 +41,14 @@ void terminal_setcolor(uint8_t color);
 void terminal_putentryat(char c, uint8_t color, size_t x, size_t y);
 
 void terminal_putchar(char c);
+
+void terminal_put_uint(uint32_t d, enum INT_BASE base, void (*putc) (char));
+
+void terminal_put_int(int32_t d);
  
 void terminal_write(const char* data, size_t size) ;
  
 void terminal_writestring(const char* data);
+
  
 #endif //__TTYO_LIB__

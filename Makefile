@@ -17,16 +17,16 @@ INC_DEST=$(DESTDIR)/include
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
 KERN_OBJ=boot.o kernel.o
-LIBK_OBJS=tty.o
-VPATH=kernel:libk/tty
+LIBK_OBJS=tty.o kio.o
+VPATH=kernel:libk/tty:libk/kio
 
 all: $(KERN_NAME).bin $(KERN_NAME).iso test
 
 $(KERN_NAME).bin: $(KERN_OBJ) $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
-	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2  boot.o kernel.o libk.a -lgcc -o $@
+	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2 $(KERN_OBJ) libk.a -lgcc -o $@
 
 libk.a: $(LIBK_OBJS)
-	$(AR) rcs $@ $<
+	$(AR) rcs $@ $(LIBK_OBJS)
 
 .s.o:
 	$(ASM) $< -o $@

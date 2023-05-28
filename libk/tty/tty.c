@@ -1,4 +1,5 @@
 #include "tty.h"
+
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) 
 {
 	return fg | bg << 4;
@@ -58,6 +59,35 @@ void terminal_putchar(char c)
 	}
 }
  
+void terminal_put_uint(uint32_t d,
+						enum INT_BASE base,
+							void (*putc)(char))
+{
+	static const char digits[] = "0123456789abcdef";
+	char buf[K_PRINT_MAX_BUF] ;
+	char* p = &buf[K_PRINT_MAX_BUF-1];
+
+	do 
+	{
+		*p-- = digits[d % base];
+		d/= base;
+	} while (d != 0);
+
+	while (++p != &buf[K_PRINT_MAX_BUF])
+	{
+		(*putc)(*p);
+	}
+}
+
+void terminal_put_int(int32_t d)
+{
+	/* Need to check sign bit */
+	if (d < 0){
+		terminal_putchar('-');
+	}
+	return terminal_put_uint(-d, DECIMAL, terminal_putchar);
+}
+
 void terminal_write(const char* data, size_t size) 
 {
 	for (size_t i = 0; i < size; i++)
