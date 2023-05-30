@@ -84,8 +84,9 @@ void terminal_put_int(int32_t d)
 	/* Need to check sign bit */
 	if (d < 0){
 		terminal_putchar('-');
+		d = (~d) + 1;
 	}
-	return terminal_put_uint(-d, DECIMAL, terminal_putchar);
+	return terminal_put_uint(d, DECIMAL, terminal_putchar);
 }
 
 void terminal_write(const char* data, size_t size) 
