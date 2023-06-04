@@ -1,0 +1,5 @@
+*.o
+*.bin
+isodir
+*.a
+sysroot
