@@ -48,7 +48,7 @@ clean:
 	rm -f *.bin
 	rm -f -r ./isodir
 	rm -f *.a
-	rm -f -r sysroot
+	rm -f -r $(SYSROOT)
 	
 install: install-libs install-headers
 
