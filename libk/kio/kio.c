@@ -23,6 +23,9 @@ size_t k_printf(char* format, ...)
 			} else if (*t_format == 'd') {
 				int32_t  int_to_print = va_arg(argp, int32_t);
 				terminal_put_int(int_to_print);
+			} else if (*t_format == 's') {
+				char* string_p = (char*)va_arg(argp, char*);
+				terminal_writestring(string_p);
 			}
 		} else {
 			terminal_putchar(*t_format);

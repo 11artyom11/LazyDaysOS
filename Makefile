@@ -53,7 +53,7 @@ libk.a: $(LIBK_OBJS)
 
 $(KERN_NAME).iso: $(KERN_NAME).bin
 	$(info )
-	@echo "$(COLOUR_GREEN)> $(COLOUR_END)"	
+	@echo "$(COLOUR_GREEN)> Generating iso image from bin$(COLOUR_END)"	
 
 	mkdir -p isodir/boot/grub
 	cp $< isodir/boot/$<
@@ -71,7 +71,8 @@ clean:
 	rm -f *.bin
 	rm -f -r ./isodir
 	rm -f *.a
-	rm -f -r $(SYSROOT)
+#   TOneverTHINK : Clean won't delete sysroot?
+# 	rm -f -r $(SYSROOT)
 	
 install: install-libs install-headers
 
