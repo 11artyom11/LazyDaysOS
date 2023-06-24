@@ -1,1 +1,1 @@
-sudo qemu-system-i386 -cdrom isodir/boot/DudeOS.iso
+sudo qemu-system-i386 -cdrom sysroot/boot/kernel/DudeOS.iso

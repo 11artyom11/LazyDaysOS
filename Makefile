@@ -13,10 +13,17 @@ LIBK_INC_DIR=$(LIBK_SRC_DIR)/include
 KERNEL_SRC_DIR=kernel
 INC=-I$(LIBK_INC_DIR)
 CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC)
+BIN_SRC=isodir
+BOOT_SRC=$(BIN_SRC)/boot
+GRUB_SRC=$(BOOT_SRC)/grub
+KERNEL_SRC=$(BOOT_SRC)/bin
 SYSROOT=sysroot
 DESTDIR=$(SYSROOT)/usr
+BOOTDIR=$(SYSROOT)/boot
 LIB_DEST=$(DESTDIR)/lib
 INC_DEST=$(DESTDIR)/include
+GRUB_DEST=$(BOOTDIR)/grub
+KERNEL_DEST=$(BOOTDIR)/kernel
 
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
@@ -25,7 +32,7 @@ KERN_OBJ=boot.o kernel.o
 LIBK_OBJS=tty.o kio.o
 VPATH=kernel:libk/tty:libk/kio
 
-all: $(KERN_NAME).bin $(KERN_NAME).iso test
+all: $(KERN_NAME).bin
 
 $(KERN_NAME).bin: $(KERN_OBJ) $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
 	$(info )
@@ -55,11 +62,13 @@ $(KERN_NAME).iso: $(KERN_NAME).bin
 	$(info )
 	@echo "$(COLOUR_GREEN)> Generating iso image from bin$(COLOUR_END)"	
 
-	mkdir -p isodir/boot/grub
-	cp $< isodir/boot/$<
-	sh gen_grubcfg.sh isodir/boot/grub/grub.cfg $(KERN_NAME)
-	grub-mkrescue -o $@ isodir
-	cp $@ isodir/boot/$@
+	mkdir -p $(KERNEL_DEST)
+	mkdir -p $(GRUB_DEST)
+
+	cp $< $(KERNEL_DEST)/$<
+	sh gen_grubcfg.sh $(GRUB_DEST)/grub.cfg $(KERN_NAME) /boot/kernel/$(KERN_NAME).bin
+	grub-mkrescue -o $@ $(SYSROOT)
+	cp $@ $(KERNEL_DEST)/$@
 	rm $<
 	rm $@
 
@@ -72,9 +81,9 @@ clean:
 	rm -f -r ./isodir
 	rm -f *.a
 #   TOneverTHINK : Clean won't delete sysroot?
-# 	rm -f -r $(SYSROOT)
+	rm -f -r $(SYSROOT)
 	
-install: install-libs install-headers
+install: install-libs install-headers install-kernel $(KERN_NAME).iso
 
 install-libs: libk.a
 	$(info )
@@ -92,9 +101,21 @@ install-headers:
 	mkdir -p $(INC_DEST)
 	cp -R --preserve=timestamps libk/include/. $(INC_DEST)
 
+install-grub:
+	$(info )
+	@echo "$(COLOUR_GREEN)> Installing GRUB files to $(GRUB_DEST)$(COLOUR_END)"	
+	mkdir -p $(GRUB_DEST)
+	cp -R --preserve=timestamps $(GRUB_SRC)/. $(GRUB_DEST) 
+
+install-kernel:
+	$(info )
+	@echo "$(COLOUR_GREEN)> Installing kernel binaries to $(GRUB_DEST)$(COLOUR_END)"	
+	mkdir -p $(KERNEL_DEST)
+	cp -R --preserve=timestamps $(KERN_NAME).bin $(KERNEL_DEST) 
+
 test:	
 	$(info )
-	@echo "$(COLOUR_GREEN)> Running tests $(LIB_DEST)$(COLOUR_END)"	
+	@echo "$(COLOUR_GREEN)> Running tests $(COLOUR_END)"	
 	$(info )
 
-	sh test_multiboot.sh ./isodir/boot/$(KERN_NAME).bin
+	sh test_multiboot.sh $(KERNEL_SRC)/$(KERN_NAME).bin
