@@ -4,6 +4,7 @@
         "vgadef.h": "c",
         "tty.h": "c",
         "stdarg.h": "c",
-        "kio.h": "c"
+        "kio.h": "c",
+        "stdint-gcc.h": "c"
     }
 }

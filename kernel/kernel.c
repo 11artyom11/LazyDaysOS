@@ -9,7 +9,7 @@ void kernel_main(void)
 
 	boot_successful = true;
 	if (boot_successful){
-		k_printf("Kernel is ready");	
+		k_printf("Kernel is ready");
 	} else {
 		k_printf("Kernel failed to set up");	
 	}

@@ -28,7 +28,7 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o
+KERN_OBJ=boot.o kernel.o idt.o
 LIBK_OBJS=tty.o kio.o
 VPATH=kernel:libk/tty:libk/kio
 
@@ -83,7 +83,7 @@ clean:
 #   TOneverTHINK : Clean won't delete sysroot?
 	rm -f -r $(SYSROOT)
 	
-install: install-libs install-headers install-kernel $(KERN_NAME).iso
+install: install-libs install-headers install-kernel $(KERN_NAME).iso test
 
 install-libs: libk.a
 	$(info )
@@ -118,4 +118,4 @@ test:
 	@echo "$(COLOUR_GREEN)> Running tests $(COLOUR_END)"	
 	$(info )
 
-	sh test_multiboot.sh $(KERNEL_SRC)/$(KERN_NAME).bin
+	sh test_multiboot.sh $(KERNEL_DEST)/$(KERN_NAME).bin
