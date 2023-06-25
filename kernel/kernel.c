@@ -1,9 +1,12 @@
 #include "kio.h"
+#include "idt.h"
+
 static bool boot_successful = false;
 void kernel_main(void) 
 {
 	/* Initialize terminal interface */
 	terminal_initialize();
+	__init_idt__();
 	
 	k_printf("Setting up kernel...\n");	
 

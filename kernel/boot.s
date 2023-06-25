@@ -21,7 +21,7 @@ stack_bottom:
 .skip 16386 #16KiB
 stack_top:
 
-
+	
 /*As the linker script specifies _start as the entry point to the kernel and the bootloader will jump to this position once the kernel has been loaded. It does'nt make sense to return from this routine, as parent called - bootloader is gone by that time*/
 
 .section .text

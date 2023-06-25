@@ -28,7 +28,7 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o idt.o
+KERN_OBJ=boot.o kernel.o idt.o hwio.o
 LIBK_OBJS=tty.o kio.o
 VPATH=kernel:libk/tty:libk/kio
 
