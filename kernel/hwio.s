@@ -20,6 +20,6 @@ inb:
 .type idt_buf_drain, @function
 
 idt_buf_drain:
-    mov  %eax, 4(%esp)
+    // movl  4(%esp), %eax
     lidt (%eax)
     ret

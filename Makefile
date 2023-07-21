@@ -12,7 +12,7 @@ LIBK_SRC_DIR=libk
 LIBK_INC_DIR=$(LIBK_SRC_DIR)/include
 KERNEL_SRC_DIR=kernel
 INC=-I$(LIBK_INC_DIR)
-CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC)
+CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC) -g
 BIN_SRC=isodir
 BOOT_SRC=$(BIN_SRC)/boot
 GRUB_SRC=$(BOOT_SRC)/grub
@@ -28,7 +28,7 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o idt.o hwio.o
+KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o
 LIBK_OBJS=tty.o kio.o
 VPATH=kernel:libk/tty:libk/kio
 
@@ -50,7 +50,7 @@ libk.a: $(LIBK_OBJS)
 	$(info )
 	@echo "$(COLOUR_GREEN)> Compiling ASM units $(COLOUR_END)"	
 
-	$(ASM) $< -o $@
+	$(ASM) $< -g -o $@
 
 .c.o:
 	$(info )

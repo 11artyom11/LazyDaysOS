@@ -6,12 +6,12 @@
 #include <stdint.h>
 #include "vgadef.h"
  
-/* Check if the compiler thinks you are targeting the wrong operating system. */
+/* Check if the compiler is targeting the wrong operating system. */
 #if defined(__linux__)
 #error "Cross-compiler is not set up, ELF image is not fair"
 #endif
  
-/* This tutorial will only work for the 32-bit ix86 targets. */
+/* This will only work for the 32-bit ix86 targets. */
 #if !defined(__i386__)
 #error "This project needs to be compiled with a ix86-elf compiler"
 #endif

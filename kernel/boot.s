@@ -29,6 +29,7 @@ stack_top:
 .type _start, @function
 _start:
 	mov $stack_top, %esp
+	sti
 	call kernel_main
 	cli
 1:	hlt
