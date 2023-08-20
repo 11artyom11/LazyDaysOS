@@ -1,3 +1,15 @@
-sudo qemu-system-i386  -kernel sysroot/boot/kernel/DudeOS.bin \
-    -usb \
-    -device usb-host,hostbus=1,hostport=2
+FLAGS=
+BINROOT="sysroot/boot/kernel"
+EXECBOOT=$BINROOT"/DudeOS"
+
+if [ "$1" = "-d" ]; then
+    FLAGS=$FLAGS"-s -S"
+fi
+if [ "$1" = "--iso" ]; then
+    FLAGS=$FLAGS" -cdrom"
+    EXECBOOT=$EXECBOOT".iso"
+else
+    FLAGS=$FLAGS" -kernel"
+    EXECBOOT=$EXECBOOT".bin"
+fi
+sudo qemu-system-i386 $FLAGS $EXECBOOT
