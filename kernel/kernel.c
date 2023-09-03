@@ -6,14 +6,9 @@ void kernel_main(void)
 {
 	/* Initialize terminal interface */
 	terminal_initialize();
-	__init_idt__();
-	asm("int $30");
-	asm("int $31");
-	asm("int $32");
+	init_idt();
 	k_printf("Setting up kernel...\n");	
-
 	boot_successful = true;
-	asm("int $33");
 	if (boot_successful){
 		k_printf("Kernel is ready");
 	} else {
