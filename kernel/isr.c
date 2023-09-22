@@ -14,14 +14,14 @@
 
 void interrupt_handler(int intno)
 {
-    k_printf("BROSKI.....%d\n\n", intno);
     if (intno >= 40) {
         outb(0xA0, 0x20);
-        return;
+        k_printf("%d", intno);
     }
     
     if (intno >= 32) {
         outb(0x20, 0x20);
+        k_printf("%d", intno);
     }; 
     return;        
 }
