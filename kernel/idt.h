@@ -1,38 +1,9 @@
-#ifndef __INTERRUPT_TABLE__
-#define __INTERRUPT_TABLE__
+#ifndef INCLUDE_IDT_H
+#define INCLUDE_IDT_H
 
-/* Remove integer typedefs into separate file */
 #include <stdint.h>
 
-/* 
- *
- * The special, CPU-dedicated interrupts are shown below.
- *
- *     0 - Division by zero exception
- *     1 - Debug exception
- *     2 - Non maskable interrupt
- *     3 - Breakpoint exception
- *     4 - 'Into detected overflow'
- *     5 - Out of bounds exception
- *     6 - Invalid opcode exception
- *     7 - No coprocessor exception
- *     8 - Double fault (pushes an error code)
- *     9 - Coprocessor segment overrun
- *     10 - Bad TSS (pushes an error code)
- *     11 - Segment not present (pushes an error code)
- *     12 - Stack fault (pushes an error code)
- *     13 - General protection fault (pushes an error code)
- *     14 - Page fault (pushes an error code)
- *     15 - Unknown interrupt exception
- *     16 - Coprocessor fault
- *     17 - Alignment check exception
- *     18 - Machine check exception
- *     19-31 - Reserved
- *     32-255 - Are free to be used for I/O devices or other interruptable stuff
- *
- * Following are the function call to above 32 interrupt handlers.
- * Extern allows to access ASM from this C code.
- */
+#pragma once
 
 /* The processor will sometimes need to signal your kernel. Something major may
  * have happened, such as a divide-by-zero, or a page fault. To do this, it uses
@@ -100,9 +71,6 @@ extern void ISR29();
 extern void ISR30();
 extern void ISR31();
 
-/* Maximum entries allowed in IDT */
-#define IDT_LIMIT 256
-
 /* Common Definitions for PIC */
 #define PIC1 0x20 /* IO base address for master PIC */
 #define PIC2 0xA0 /* IO base address for slave PIC */
@@ -110,7 +78,6 @@ extern void ISR31();
 #define PIC1_DATA (PIC1 + 1)
 #define PIC2_COMMAND PIC2
 #define PIC2_DATA (PIC2 + 1)
-
 
 /* reinitialize the PIC controllers, giving them specified vector offsets
  * rather than 8h and 70h, as configured by default
@@ -162,58 +129,42 @@ extern void IRQ3();
 extern void IRQ4();
 extern void IRQ5();
 extern void IRQ6();
-extern void IRQ7();                            
+extern void IRQ7();
 extern void IRQ8();
-extern void IRQ9();       /* These are reserved for example for keyboard or mouse usage, exactly what we needed */
-extern void IRQ10();      /* These are reserved for example for keyboard or mouse usage, exactly what we needed */
-extern void IRQ11();      /* These are reserved for example for keyboard or mouse usage, exactly what we needed */
-extern void IRQ12();      /* These are reserved for example for keyboard or mouse usage, exactly what we needed */
+extern void IRQ9();
+extern void IRQ10();
+extern void IRQ11();
+extern void IRQ12();
 extern void IRQ13();
 extern void IRQ14();
 extern void IRQ15();
 
-/*
-    This struct represents a single entry in interrupt descriptor table (8bytes' length)
-    Ref: https://wiki.osdev.org/Interrupt_Descriptor_Table#IDTR
+/* This structure contains the value of one IDT entry.
+ * We use the attribute 'packed' to tell GCC not to change
+ * any of the alignment in the structure.
  */
-struct _interrupt_descriptor_table_element_ {
-    /* TOneverDO add typedefs to uintXX_t's */
-    uint16_t __lower_offset;    // offset bits [0,15]
-    uint16_t __segment_selector;// a code segment selector
-    uint8_t  __zero;            // unused, set to 0
-    uint8_t  __type_attributes; // gate type, dpl, and p fields
-    uint16_t __higher_offset;   // offset bits [16-31]
+struct idt_entry_struct {
+  uint16_t offset_low;       /* The lowest 16 bits of the 32 bit ISR address. */
+  uint16_t segment_selector; /* Segment Selector. */
+  uint8_t alwaysZero;        /* This 8 bits are always 0. */
+  uint8_t access_gran;  /* Access flags, granularity and few reserved bits. */
+  uint16_t offset_high; /* The highest 16 bits of the 32 bit ISR address. */
 } __attribute__((packed));
-typedef struct _interrupt_descriptor_table_element_ _idt_element_;
 
-/* According to LIDT instruction the operand structure has to be in this shape */
-struct _interrupt_descriptor_table_pointer_ {
-    uint16_t __limit;   // the maximum length of IDT in bytes
-    uint32_t __base;    // the first IDT entry address (longword)
+typedef struct idt_entry_struct idt_entry_t;
+
+/* This struct describes a IDT pointer. It points to the start of
+ * our array of IDT entries, and is in the format required by the
+ * lidt instruction.
+ */
+struct idt_ptr_struct {
+  uint16_t limit; /* The upper 16 bits of the table with entries. */
+  uint32_t base;  /* The address of the first idt_entry_t struct. */
 } __attribute__((packed));
-typedef struct _interrupt_descriptor_table_pointer_ _idt_p_;
 
+typedef struct idt_ptr_struct idt_ptr_t;
 
-/**
- * @brief Initializes IDT
- */
-void __init_idt__(void);
+/* Function to initialize IDT */
+void init_idt();
 
-/**
- * @brief Register an interrupt entry to IDT to specific vector number
- * 
- * @param _tab_pos       Position in the IDT
- * @param _lower_offset  Lower 16 bits of the address
- * @param _seg_selector  Code segment selector
- * @param _zerob         Just let it be zero
- * @param _type_att      
- * @param _higher_offset Higher 16 bits of the address
- */
-void __set_entry__(uint8_t _tab_pos, uint32_t IRQAddr, uint16_t _seg_selector, uint8_t _type_att);
-
-/**
- * @brief Initialize PIC for futher interrupt handler setup
- */
-void __init_pic__(void);
-
-#endif /* __INTERRUPT_TABLE__ */
+#endif /* INCLUDE_IDT_H */

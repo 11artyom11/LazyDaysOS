@@ -3,6 +3,8 @@
 .type outb, @function
 
 outb:
+    xorl %eax, %eax
+    xorl %edx, %edx
     mov 8(%esp), %al 
     mov 4(%esp), %dx
     out  %al, %dx 
@@ -12,6 +14,8 @@ outb:
 .type inb, @function
 
 inb:
+    xorl %eax, %eax
+    xorl %edx, %edx
     mov %dx, 4(%esp)
     in %dx, %al
     ret
