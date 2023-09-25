@@ -1,11 +1,13 @@
+/* Implements serial input from keyboard qwerty */
 #ifndef __TTYI_LIB__
 #define __TTYI_LIB__
+
 #include "../../kernel/hwio.h"
 #include "../include/kio.h"
 
-static char* _qwertzuiop = "qwertzuiop"; // 0x10-0x1c
+static char* _qwertzuiop = "qwertyuiop"; // 0x10-0x1c
 static char* _asdfghjkl = "asdfghjkl";
-static char* _yxcvbnm = "yxcvbnm";
+static char* _yxcvbnm = "zxcvbnm";
 static char* _num = "123456789";
 
 enum KEYCODE {
@@ -81,10 +83,8 @@ enum KEYCODE {
 
 };
 
-
 uint8_t keyboard_to_ascii(uint8_t key)
 {
-	//kprintf("key=0x%x\n", key);
 	if(key == 0x1C) return '\n';
 	if(key == 0x39) return ' ';
 	if(key == 0xE) return '\r';
@@ -115,7 +115,6 @@ void keyboard_read()
         terminal_putchar((char)lastkey);
     }
 }
-
 
 
 #endif /* __TTYI_LIB__ */

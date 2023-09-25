@@ -17,15 +17,9 @@ typedef void (*isr_routine_ptr) (void);
 
 static isr_routine_ptr isr_map[255] = {NULL};
 
-void timer_tick()
-{
-    k_printf(".");
-}
-
 void register_routines()
 {
     isr_map[KBD_INTERRUPT] = &keyboard_read;
-    isr_map[KBD_INTERRUPT-1] = &timer_tick;
 }
 
 void interrupt_handler(int intno)

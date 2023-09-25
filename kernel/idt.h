@@ -171,4 +171,9 @@ typedef struct idt_ptr_struct idt_ptr_t;
 /* Function to initialize IDT */
 void init_idt();
 
+/* These functions are used to enable/disable interrupt entries */
+void idt_enable_entry(int interrupt);
+void idt_disable_entry(int interrupt);
+
+
 #endif /* INCLUDE_IDT_H */
