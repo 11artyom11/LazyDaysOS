@@ -1,7 +1,7 @@
 #include "kio.h"
 #include <stdarg.h>
 
-size_t k_printf(char* format, ...)
+size_t k_print(char* format, ...)
 {
 	va_list argp;
 	va_start(argp, format);

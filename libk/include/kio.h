@@ -3,7 +3,7 @@
 
 #include "tty.h"
 
-size_t k_printf(char* format, ...);
+size_t k_print(char* format, ...);
 
 
 #endif /* __KIO_LIB__ */
