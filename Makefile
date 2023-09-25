@@ -29,8 +29,8 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
 KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o
-LIBK_OBJS=tty.o kio.o
-VPATH=kernel:libk/tty:libk/kio
+LIBK_OBJS=tty.o kio.o ttyin.o
+VPATH=kernel:libk/tty:libk/kio:libk/ttyin
 
 all: $(KERN_NAME).bin
 

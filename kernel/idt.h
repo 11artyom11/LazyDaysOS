@@ -1,5 +1,9 @@
 #ifndef INCLUDE_IDT_H
 #define INCLUDE_IDT_H
+#define MAP_IRQ(irq) (irq + 0x20)
+
+
+#define KBD_INTERRUPT MAP_IRQ(1)
 
 #include <stdint.h>
 

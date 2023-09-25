@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "hwio.h"
+#include "isr.h"
 
 extern void idt_buf_drain(uint32_t);
 
@@ -151,4 +152,5 @@ void init_idt() {
   idt_set_gate(47, (uint32_t)IRQ15, 0x08, 0x8E); // IRQ 15
 
   idt_buf_drain((uint32_t)&idt_ptr);
+  register_routines();
 }
