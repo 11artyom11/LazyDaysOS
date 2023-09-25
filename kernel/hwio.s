@@ -16,7 +16,7 @@ outb:
 inb:
     xorl %eax, %eax
     xorl %edx, %edx
-    mov %dx, 4(%esp)
+    mov 4(%esp), %dx
     in %dx, %al
     ret
 

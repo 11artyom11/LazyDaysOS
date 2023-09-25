@@ -11,9 +11,9 @@ void kernel_main(void)
 	asm("int $4");	
 	boot_successful = true;
 	if (boot_successful){
-		k_printf("Kernel is ready");
+		k_printf("Kernel is ready\n");
 	} else {
-		k_printf("Kernel failed to set up");	
+		k_printf("Kernel failed to set up\n");	
 	}
 	return;
 }
