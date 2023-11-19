@@ -6,10 +6,10 @@ uint8_t keyboard_to_ascii(uint8_t key)
 {
 	if(key == 0x1C) return '\n';
 	if(key == 0x39) return ' ';
-	if(key == 0xE) return '\r';
 	if(key == POINT_RELEASED) return '.';
 	if(key == SLASH_RELEASED) return '/';
 	if(key == ZERO_PRESSED)  return '0';
+	if(key == BACKSPACE_PRESSED) return BACKSPACE_PRESSED;
     if(key >= ONE_PRESSED && key <= NINE_PRESSED)
 		return _num[key - ONE_PRESSED];
 	if(key >= 0x10 && key <= 0x1C)
