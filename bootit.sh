@@ -1,6 +1,6 @@
 FLAGS=
 BINROOT="sysroot/boot/kernel"
-EXECBOOT=$BINROOT"/DudeOS"
+EXECBOOT=$BINROOT"/LazyDaysOS"
 
 if [ "$1" = "-d" ]; then
     FLAGS=$FLAGS"-s -S"
