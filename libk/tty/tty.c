@@ -1,4 +1,5 @@
 #include "tty.h"
+#include "ttyin.h"
 
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) 
 {
@@ -51,6 +52,15 @@ void terminal_putchar(char c)
 		terminal_column = 0;
 		return;
 	}
+
+	if (BACKSPACE_PRESSED == c) {
+		if (terminal_column != 0) {
+			terminal_column--;
+			terminal_putentryat(BLANK_CHAR, terminal_color, terminal_column, terminal_row);
+		}
+		return;
+	}
+
 	terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
 	if (++terminal_column == VGA_WIDTH) {
 		terminal_column = 0;

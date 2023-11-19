@@ -23,6 +23,7 @@
 #endif
 
 #define K_PRINT_MAX_BUF (sizeof (long int) * 8)
+#define BLANK_CHAR 0x20
 
 enum INT_BASE 
 {
