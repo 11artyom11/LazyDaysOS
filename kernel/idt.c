@@ -47,7 +47,7 @@ void iowait()
     outb(UNUSED_PORT, 0);
 }
 
-void init_pic() {
+void init_pic(uint16_t master_offset, uint16_t slave_offset) {
  // initialization control word 1
     outb(PIC1_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
     iowait();
@@ -55,9 +55,9 @@ void init_pic() {
     iowait();
 
     // initialization control word 2 - the offsets
-    outb(PIC1_DATA_PORT, 0x20);
+    outb(PIC1_DATA_PORT, master_offset);
     iowait();
-    outb(PIC2_DATA_PORT, 0x20+8);
+    outb(PIC2_DATA_PORT, slave_offset);
     iowait();
 
     // initialization control word 3
@@ -97,7 +97,7 @@ void init_idt() {
   idt_ptr.base = (uint32_t)&idt_entries;
 
   
-  init_pic();
+  init_pic(PIC1_VECTOR_OFFSET, PIC2_VECTOR_OFFSET);
 
  
   idt_set_gate(0, (uint32_t)ISR0, 0x08, 0x8E);   // ISR 0

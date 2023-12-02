@@ -1,5 +1,7 @@
 {
     "files.associations": {
+        "*.b32": "bliss",
+        "*.r32": "bliss",
         "ttyo.h": "c",
         "vgadef.h": "c",
         "tty.h": "c",
@@ -8,7 +10,8 @@
         "stdint-gcc.h": "c",
         "idt.h": "c",
         "hwio.h": "c",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "ttyin.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
