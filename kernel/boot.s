@@ -29,9 +29,24 @@ stack_top:
 .type _start, @function
 _start:
 	mov $stack_top, %esp
-	sti
-	call kernel_main
+	
 	cli
+	call init_gdt
+	mov $0x00400000, %eax
+	mov %eax, %cs 
+
+	xorl %eax, %eax
+	mov $1, %eax
+	mov %eax, %cr0
+
+	// mov $0x00800000, %eax
+	// mov %eax, %ds
+	// xorl %eax, %eax
+
+
+	// sti
+	call kernel_main
+	// cli
 1:	hlt
 	jmp 1b
 

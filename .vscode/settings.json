@@ -11,7 +11,8 @@
         "idt.h": "c",
         "hwio.h": "c",
         "stddef.h": "c",
-        "ttyin.h": "c"
+        "ttyin.h": "c",
+        "gdt.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

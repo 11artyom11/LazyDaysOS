@@ -12,4 +12,4 @@ else
     FLAGS=$FLAGS" -kernel"
     EXECBOOT=$EXECBOOT".bin"
 fi
-sudo qemu-system-i386 $FLAGS $EXECBOOT
+sudo qemu-system-i386 $FLAGS $EXECBOOT  

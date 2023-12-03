@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define GDT_ENTRY_MAX 8192
+
 /* 
     Structure to hold Global descriptor table entry info
  */
@@ -35,7 +37,7 @@ typedef struct  {
     L: Long-mode code flag. If set (1), the descriptor defines a 64-bit code segment. When set, DB should always be clear. For any other type of segment (other code types or any data segment), it should be clear (0). 
      */
     uint8_t base_2; /* The highest 8 bit of the base of the segment */
-} __attribute__((packed)) segment_descriptor;
+} __attribute__((packed)) segment_descriptor_t;
 
 
 /* 
@@ -44,8 +46,8 @@ typedef struct  {
  */
 typedef struct {
     uint16_t gdt_size; /* The size of the table in bytes subtracted by 1 */
-    uint32_t offset; /* The start LINEAR address of the GDT */
-} __attribute__((packed)) gdt_table;
+    segment_descriptor_t* offset; /* The start LINEAR address of the GDT */
+} __attribute__((packed)) gdt_ptr_t;
 
 
 #endif /* __GDT_H__ */

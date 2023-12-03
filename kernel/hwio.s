@@ -24,6 +24,12 @@ inb:
 .type idt_buf_drain, @function
 
 idt_buf_drain:
-    // movl  4(%esp), %eax
     lidt (%eax)
+    ret
+
+.global gdt_buf_drain
+.type gdt_buf_drain, @function
+
+gdt_buf_drain:
+    lgdt (%eax)
     ret
