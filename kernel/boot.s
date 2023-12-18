@@ -28,25 +28,36 @@ stack_top:
 .global _start
 .type _start, @function
 _start:
-	mov $stack_top, %esp
+	//0x53f000ff
+	//0x11
+	mov   %cr0, %eax
+    and    0xFFFFFE, %eax       //Set the Protected Mode bit
+    mov   %eax, %cr0      //We're now in Protected Mode!
 	
 	cli
 	call init_gdt
-	mov $0x00400000, %eax
-	mov %eax, %cs 
 
-	xorl %eax, %eax
-	mov $1, %eax
-	mov %eax, %cr0
+reloadSegments:
+    // Reload CS register containing code selector:
+	push $0x00400000
+	push reload_CS
+	retf
 
-	// mov $0x00800000, %eax
-	// mov %eax, %ds
-	// xorl %eax, %eax
+reload_CS:
+    // Reload data segment registers:
+    mov  $0x00800000, %eax    // 0x10 is a stand-in for your data segment
+    mov  %eax, %ds
+    mov  %eax, %es
+    mov  %eax, %fs
+    mov  %eax, %gs
+    mov  %eax, %ss
 
+	// mov   %cr0, %eax
+    // inc   %eax       //Set the Protected Mode bit
+    // mov   %eax, %cr0      //We're now in Protected Mode!
 
-	// sti
 	call kernel_main
-	// cli
+	cli
 1:	hlt
 	jmp 1b
 

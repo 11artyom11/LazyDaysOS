@@ -1,4 +1,4 @@
 file sysroot/boot/kernel/LazyDaysOS.bin
 target remote localhost:1234
-b kernel_main
+b _start
 continue
