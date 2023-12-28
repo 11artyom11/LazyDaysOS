@@ -30,32 +30,32 @@ stack_top:
 _start:
 	//0x53f000ff
 	//0x11
-	mov   %cr0, %eax
-    and    0xFFFFFE, %eax       //Set the Protected Mode bit
-    mov   %eax, %cr0      //We're now in Protected Mode!
+	// mov   %cr0, %eax
+    // and    0xFFFFFE, %eax       //Set the Protected Mode bit
+    // mov   %eax, %cr0      //We're now in Protected Mode!
 	
-	cli
-	call init_gdt
+	// cli
+	// call init_gdt
 
-reloadSegments:
-    // Reload CS register containing code selector:
-	push $0x00400000
-	push reload_CS
-	retf
+// reloadSegments:
+//     // Reload CS register containing code selector:
+// 	push $0x00400000
+// 	push reload_CS
+// 	retf
 
 reload_CS:
     // Reload data segment registers:
-    mov  $0x00800000, %eax    // 0x10 is a stand-in for your data segment
-    mov  %eax, %ds
-    mov  %eax, %es
-    mov  %eax, %fs
-    mov  %eax, %gs
-    mov  %eax, %ss
-
-	// mov   %cr0, %eax
-    // inc   %eax       //Set the Protected Mode bit
-    // mov   %eax, %cr0      //We're now in Protected Mode!
-
+    // mov  $0x00800000, %eax    // 0x10 is a stand-in for your data segment
+    // mov  %eax, %ds
+    // mov  %eax, %es
+    // mov  %eax, %fs
+    // mov  %eax, %gs
+    // mov  %eax, %ss
+    cli
+	mov   %cr0, %eax
+    and   %eax, 0x0       //Set the Protected Mode bit
+    mov   %eax, %cr0      //We're now in Protected Mode!
+    sti
 	call kernel_main
 	cli
 1:	hlt

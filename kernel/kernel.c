@@ -6,14 +6,15 @@ void kernel_main(void)
 {
 	/* Initialize terminal interface */
 	terminal_initialize();
-	// init_idt();
-	k_print("Setting up kernel...\n");
-	// asm("int $4");	
+	init_idt();
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] We're now in protected mode\n");
+	asm("int $4");	
 	boot_successful = true;
 	if (boot_successful){
-		k_print("Kernel is ready\n");
+		k_print("[SUCC] Kernel is ready\n");
 	} else {
-		k_print("Kernel failed to set up\n");	
+		k_print("[FAIL] Kernel failed to set up\n");	
 	}
 	return;
 }
