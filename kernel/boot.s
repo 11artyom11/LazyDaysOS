@@ -52,13 +52,31 @@ reload_CS:
     // mov  %eax, %gs
     // mov  %eax, %ss
     cli
-	mov   %cr0, %eax
-    and   %eax, 0x0       //Set the Protected Mode bit
-    mov   %eax, %cr0      //We're now in Protected Mode!
+    call safe_switch_protected
     sti
 	call kernel_main
 	cli
 1:	hlt
 	jmp 1b
+
+.section .text
+.type safe_switch_protected, @function
+safe_switch_protected:
+	mov   %cr0, %eax
+    or   %eax, 0x1       //Set the Protected Mode bit
+    mov   %eax, %cr0      //We're now in Protected Mode!
+    ret
+
+.section .text
+.type safe_real, @function
+safe_switch_real:
+    mov %cr0, %eax
+    mov %eax, %ebx
+    dec %ebx
+    and  %ebx, %eax
+    mov %eax, %cr0
+    ret
+
+
 
 .size _start, . - _start

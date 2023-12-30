@@ -8,7 +8,16 @@ void kernel_main(void)
 	terminal_initialize();
 	init_idt();
 	k_print("[INFO] Setting up kernel...\n");
-	k_print("[INFO] We're now in protected mode\n");
+	asm("push %eax \n\
+		 mov %cr0, %eax");
+
+	register int cr0 asm("eax");
+	if ((cr0) & 1) {
+		k_print("[INFO] We're now in protected mode cr0: %d \n", cr0);
+	} else {
+		k_print("[INFO] We're now in real mode cr0: %d \n", cr0);
+	}
+
 	asm("int $4");	
 	boot_successful = true;
 	if (boot_successful){
