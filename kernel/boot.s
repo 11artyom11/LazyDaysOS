@@ -39,20 +39,16 @@ _start:
 
 // reloadSegments:
 //     // Reload CS register containing code selector:
-// 	push $0x00400000
-// 	push reload_CS
-// 	retf
 
-reload_CS:
-    // Reload data segment registers:
-    // mov  $0x00800000, %eax    // 0x10 is a stand-in for your data segment
-    // mov  %eax, %ds
-    // mov  %eax, %es
-    // mov  %eax, %fs
-    // mov  %eax, %gs
-    // mov  %eax, %ss
     cli
     call safe_switch_protected
+    jmp $0x8, $reload_CS
+    
+.code32
+reload_CS:
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %ss
     sti
 	call kernel_main
 	cli

@@ -68,9 +68,9 @@ void init_gdt()
 
     gdt_set_entry_ready(gdt_entry_ptr, 0, 0, 0, 0);
     gdt_entry_ptr += sizeof(segment_descriptor_t);
-    gdt_set_entry_ready(gdt_entry_ptr,  0x00400000, 0x003FFFFF, 0x9A, 0xC);
+    gdt_set_entry_ready(gdt_entry_ptr,  0x004, 0x003FFFFF, 0x9A, 0xC);
     gdt_entry_ptr += sizeof(segment_descriptor_t);
-    gdt_set_entry_ready(gdt_entry_ptr, 0x00800000, 0x003FFFFF, 0x92, 0xC);
+    gdt_set_entry_ready(gdt_entry_ptr, 0x008, 0x003FFFFF, 0x92, 0xC);
     gdt_entry_ptr += sizeof(segment_descriptor_t);
 
     gdt_buf_drain((uint32_t)&gdt_ptr);
