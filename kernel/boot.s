@@ -40,8 +40,8 @@ _start:
 // reloadSegments:
 //     // Reload CS register containing code selector:
     cli
-    // call i686_GDT_Initialize
-    // call safe_switch_protected
+    call i686_GDT_Initialize
+    call safe_switch_protected
     sti
 	call kernel_main
 	cli
