@@ -33,6 +33,7 @@ idt_buf_drain:
 i686_GDT_Load:
     // push %ebp
     // mov %esp, %ebp
+    cli
     pop %ebx
     xor %ebx, %ebx
     pop %eax
@@ -47,8 +48,9 @@ i686_GDT_Load:
  
     mov $0x08, %eax
     push %eax
-    movl $0x10003a, %edx
+    movl $kernel_main, %edx
     push %edx
+    sti
     retf
     // mov %ebp, %esp
     // pop %ebp

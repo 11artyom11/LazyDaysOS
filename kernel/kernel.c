@@ -7,7 +7,8 @@ void kernel_main(void)
 	/* Initialize terminal interface */
 	terminal_initialize();
 	init_idt();
-	asm("int $4");	// Don't remove this line, it's critical to make interrupts work, idonno why LLOL
+	asm("sti\n\
+		int $4");	// Don't remove this line, it's critical to make interrupts work, idonno why LLOL
 	k_print("[INFO] Setting up kernel...\n");
 	asm("push %eax \n\
 		 mov %cr0, %eax");
