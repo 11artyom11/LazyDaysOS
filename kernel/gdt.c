@@ -1,77 +1,94 @@
 #include "gdt.h"
+#include <stdint.h>
 
-static segment_descriptor_t gdt_entries[GDT_ENTRY_MAX];
-
-extern void gdt_buf_drain(uint32_t);
-
-void gdt_set_entry_ready(segment_descriptor_t* gdt_entry, uint32_t base, uint32_t limit, uint8_t access, uint8_t flags)
+typedef struct
 {
-    gdt_entry->base = (base & 0xFFFFFF);
-    gdt_entry->limit = (limit & 0xFFFF);
-    gdt_entry->access = access;
-    gdt_entry->flags = (flags & 0x0F);
-    gdt_entry->limit_2 = (limit >> 16) & 0x0F;
-    gdt_entry->base_2 = (base >> 24) & 0xFF;
+    uint16_t LimitLow;                  // limit (bits 0-15)
+    uint16_t BaseLow;                   // base (bits 0-15)
+    uint8_t BaseMiddle;                 // base (bits 16-23)
+    uint8_t Access;                     // access
+    uint8_t FlagsLimitHi;               // limit (bits 16-19) | flags
+    uint8_t BaseHigh;                   // base (bits 24-31)
+} __attribute__((packed)) GDTEntry;
+
+typedef struct
+{
+    uint16_t Limit;                     // sizeof(gdt) - 1
+    GDTEntry* Ptr;                      // address of GDT
+} __attribute__((packed)) GDTDescriptor;
+
+typedef enum
+{
+    GDT_ACCESS_CODE_READABLE                = 0x02,
+    GDT_ACCESS_DATA_WRITEABLE               = 0x02,
+
+    GDT_ACCESS_CODE_CONFORMING              = 0x04,
+    GDT_ACCESS_DATA_DIRECTION_NORMAL        = 0x00,
+    GDT_ACCESS_DATA_DIRECTION_DOWN          = 0x04,
+
+    GDT_ACCESS_DATA_SEGMENT                 = 0x10,
+    GDT_ACCESS_CODE_SEGMENT                 = 0x18,
+
+    GDT_ACCESS_DESCRIPTOR_TSS               = 0x00,
+
+    GDT_ACCESS_RING0                        = 0x00,
+    GDT_ACCESS_RING1                        = 0x20,
+    GDT_ACCESS_RING2                        = 0x40,
+    GDT_ACCESS_RING3                        = 0x60,
+
+    GDT_ACCESS_PRESENT                      = 0x80,
+
+} GDT_ACCESS;
+
+typedef enum 
+{
+    GDT_FLAG_64BIT                          = 0x20,
+    GDT_FLAG_32BIT                          = 0x40,
+    GDT_FLAG_16BIT                          = 0x00,
+
+    GDT_FLAG_GRANULARITY_1B                 = 0x00,
+    GDT_FLAG_GRANULARITY_4K                 = 0x80,
+} GDT_FLAGS;
+
+// Helper macros
+#define GDT_LIMIT_LOW(limit)                (limit & 0xFFFF)
+#define GDT_BASE_LOW(base)                  (base & 0xFFFF)
+#define GDT_BASE_MIDDLE(base)               ((base >> 16) & 0xFF)
+#define GDT_FLAGS_LIMIT_HI(limit, flags)    (((limit >> 16) & 0xF) | (flags & 0xF0))
+#define GDT_BASE_HIGH(base)                 ((base >> 24) & 0xFF)
+
+#define GDT_ENTRY(base, limit, access, flags) {                     \
+    GDT_LIMIT_LOW(limit),                                           \
+    GDT_BASE_LOW(base),                                             \
+    GDT_BASE_MIDDLE(base),                                          \
+    access,                                                         \
+    GDT_FLAGS_LIMIT_HI(limit, flags),                               \
+    GDT_BASE_HIGH(base)                                             \
 }
 
-void gdt_set_entry(segment_descriptor_t* gdt_entry, uint32_t limit,
-                    uint32_t base, uint8_t present, uint8_t ring, 
-                    uint8_t system, uint8_t executable, uint8_t conforming, uint8_t rw,
-                        uint8_t granul, uint8_t db, uint8_t lmode) {
-    uint8_t access = 0;
-    uint8_t flags = 0;
-    /* 
-     7   6   5   4   3   2   1   0
-    [0] [0] [0] [0] [0] [0] [0] [0] 
-     */
-    access |= (present & 0b1);
-    access = access << 2;
-    access |=  (ring & 0b11);
-    access = access << 1;
-    access |= (system & 0b1);
-    access = access << 1;
-    access |= (executable & 0b1);
-    access = access << 1;
-    access |= (conforming & 0b1);
-    access = access << 1;
-    access |= (rw & 0b1);
-    access = access << 1;
-    /* 
-     7   6   5   4   3   2   1   0
-    [p] [r0] [r1] [s] [e] [c] [rw] [0] <= this last bit is left for CPU
-     */
+static GDTEntry g_GDT[] = {
+    // NULL descriptor
+    GDT_ENTRY(0, 0, 0, 0),
 
-    flags |= (granul & 0b1);
-    flags = flags << 1;    
-    
-    flags |= (db & 0b1);
-    flags = flags << 1;    
-    
-    flags |= (lmode & 0b1);
-    flags = flags << 1;
-    /* 
-     3   2   1   0
-    [G] [DB] [L] [0] <= last bit is reserved
-    */
+    // Kernel 32-bit code segment
+    GDT_ENTRY(0,
+              0xFFFFF,
+              GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE,
+              GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
-    gdt_set_entry_ready(gdt_entry, base, limit, access, flags);
-    return;
-}
+    // Kernel 32-bit data segment
+    GDT_ENTRY(0,
+              0xFFFFF,
+              GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
+              GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
+};
 
-void init_gdt()
+GDTDescriptor g_GDTDescriptor = { sizeof(g_GDT) - 1, g_GDT};
+
+void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment);
+
+void i686_GDT_Initialize()
 {
-    gdt_ptr_t gdt_ptr;
-    segment_descriptor_t* gdt_entry_ptr = gdt_entries;
-    gdt_ptr.gdt_size = sizeof(segment_descriptor_t) * 3 - 1;
-    gdt_ptr.offset = gdt_entries;
-
-    gdt_set_entry_ready(gdt_entry_ptr, 0, 0, 0, 0);
-    gdt_entry_ptr += sizeof(segment_descriptor_t);
-    gdt_set_entry_ready(gdt_entry_ptr,  0x004, 0x003FFFFF, 0x9A, 0xC);
-    gdt_entry_ptr += sizeof(segment_descriptor_t);
-    gdt_set_entry_ready(gdt_entry_ptr, 0x008, 0x003FFFFF, 0x92, 0xC);
-    gdt_entry_ptr += sizeof(segment_descriptor_t);
-
-    gdt_buf_drain((uint32_t)&gdt_ptr);
+    i686_GDT_Load(&g_GDTDescriptor, i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT);
 }

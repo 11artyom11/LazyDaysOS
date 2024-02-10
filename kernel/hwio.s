@@ -27,9 +27,28 @@ idt_buf_drain:
     lidt (%eax)
     ret
 
-.global gdt_buf_drain
-.type gdt_buf_drain, @function
+.global i686_GDT_Load
+.type i686_GDT_Load, @function
 
-gdt_buf_drain:
+i686_GDT_Load:
+    // push %ebp
+    // mov %esp, %ebp
+    pop %ebx
+    xor %ebx, %ebx
+    pop %eax
     lgdt (%eax)
-    ret
+ 
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    mov %ax, %ss
+ 
+    mov $0x08, %eax
+    push %eax
+    movl $0x10003a, %edx
+    push %edx
+    retf
+    // mov %ebp, %esp
+    // pop %ebp

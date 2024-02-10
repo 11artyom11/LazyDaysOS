@@ -18,7 +18,7 @@
 .section .bss
 .align 16
 stack_bottom:
-.skip 16386 #16KiB
+.skip 8000 #16KiB
 stack_top:
 
 	
@@ -39,16 +39,9 @@ _start:
 
 // reloadSegments:
 //     // Reload CS register containing code selector:
-
     cli
-    call safe_switch_protected
-    jmp $0x8, $reload_CS
-    
-.code32
-reload_CS:
-    mov $0x10, %ax
-    mov %ax, %ds
-    mov %ax, %ss
+    // call i686_GDT_Initialize
+    // call safe_switch_protected
     sti
 	call kernel_main
 	cli
