@@ -8,6 +8,23 @@ void kernel_main(void)
 	terminal_initialize();
 	init_idt();
 	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
+	k_print("[INFO] Setting up kernel...\n");
 	asm("push %eax \n\
 		 mov %cr0, %eax");
 

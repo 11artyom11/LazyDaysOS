@@ -37,6 +37,8 @@ size_t strlen(const char* str);
 
 void terminal_initialize(void);
  
+void terminal_scroll_down(void);
+
 void terminal_setcolor(uint8_t color);
  
 void terminal_putentryat(char c, uint8_t color, size_t x, size_t y);
@@ -52,4 +54,6 @@ void terminal_write(const char* data, size_t size) ;
 void terminal_writestring(const char* data);
 
  
+
+void __terminal_move_line_save(const size_t __row_index, int __direction);
 #endif //__TTYO_LIB__

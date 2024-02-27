@@ -6,6 +6,7 @@
 #define KBD_INTERRUPT MAP_IRQ(1)
 
 #include <stdint.h>
+#include <kio.h>
 
 #pragma once
 
