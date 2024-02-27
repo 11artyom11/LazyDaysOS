@@ -7,8 +7,6 @@ void kernel_main(void)
 	/* Initialize terminal interface */
 	terminal_initialize();
 	init_idt();
-	asm("sti\n\
-		int $4");	// Don't remove this line, it's critical to make interrupts work, idonno why LLOL
 	k_print("[INFO] Setting up kernel...\n");
 	asm("push %eax \n\
 		 mov %cr0, %eax");
@@ -23,6 +21,7 @@ void kernel_main(void)
 	boot_successful = true;
 	if (boot_successful){
 		k_print("[SUCC] Kernel is ready\n");
+		asm("int $10");
 	} else {
 		k_print("[FAIL] Kernel failed to set up\n");	
 	}
