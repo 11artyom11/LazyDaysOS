@@ -90,5 +90,6 @@ void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t co
 
 void i686_GDT_Initialize()
 {
+    k_print("[ INFO ] Initializing GDT\n");
     i686_GDT_Load(&g_GDTDescriptor, i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT);
 }
