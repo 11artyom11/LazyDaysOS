@@ -13,30 +13,30 @@ idt_entry_t idt_entries[256];
 #define PIC2_DATA_PORT              0xA1
 
 enum {
-    PIC_ICW1_ICW4           = 0x01,
-    PIC_ICW1_SINGLE         = 0x02,
-    PIC_ICW1_INTERVAL4      = 0x04,
-    PIC_ICW1_LEVEL          = 0x08,
-    PIC_ICW1_INITIALIZE     = 0x10
+	PIC_ICW1_ICW4           = 0x01,
+	PIC_ICW1_SINGLE         = 0x02,
+	PIC_ICW1_INTERVAL4      = 0x04,
+	PIC_ICW1_LEVEL          = 0x08,
+	PIC_ICW1_INITIALIZE     = 0x10
 } PIC_ICW1;
 
 
 // Initialization Control Word 4
 // -----------------------------
 //  0   uPM     if set, PIC is in 80x86 mode; if cleared, in MCS-80/85 mode
-//  1   AEOI    if set, on last interrupt acknowledge pulse, controller automatically performs 
+//  1   AEOI    if set, on last interrupt acknowledge pulse, controller automatically performs
 //              end of interrupt operation
 //  2   M/S     only use if BUF is set; if set, selects buffer master; otherwise, selects buffer slave
 //  3   BUF     if set, controller operates in buffered mode
 //  4   SFNM    specially fully nested mode; used in systems with large number of cascaded controllers
 //  5-7         reserved, set to 0
 enum {
-    PIC_ICW4_8086           = 0x1,
-    PIC_ICW4_AUTO_EOI       = 0x2,
-    PIC_ICW4_BUFFER_MASTER  = 0x4,
-    PIC_ICW4_BUFFER_SLAVE   = 0x0,
-    PIC_ICW4_BUFFERRED      = 0x8,
-    PIC_ICW4_SFNM           = 0x10,
+	PIC_ICW4_8086           = 0x1,
+	PIC_ICW4_AUTO_EOI       = 0x2,
+	PIC_ICW4_BUFFER_MASTER  = 0x4,
+	PIC_ICW4_BUFFER_SLAVE   = 0x0,
+	PIC_ICW4_BUFFERRED      = 0x8,
+	PIC_ICW4_SFNM           = 0x10,
 } PIC_ICW4;
 
 
@@ -44,44 +44,44 @@ enum {
 
 void iowait()
 {
-    outb(UNUSED_PORT, 0);
+	outb(UNUSED_PORT, 0);
 }
 
 void init_pic(uint16_t master_offset, uint16_t slave_offset) {
  // initialization control word 1
-    outb(PIC1_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
-    iowait();
-    outb(PIC2_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
-    iowait();
+	outb(PIC1_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
+	iowait();
+	outb(PIC2_COMMAND_PORT, PIC_ICW1_ICW4 | PIC_ICW1_INITIALIZE);
+	iowait();
 
-    // initialization control word 2 - the offsets
-    outb(PIC1_DATA_PORT, master_offset);
-    iowait();
-    outb(PIC2_DATA_PORT, slave_offset);
-    iowait();
+	// initialization control word 2 - the offsets
+	outb(PIC1_DATA_PORT, master_offset);
+	iowait();
+	outb(PIC2_DATA_PORT, slave_offset);
+	iowait();
 
-    // initialization control word 3
-    outb(PIC1_DATA_PORT, 0x4);             // tell PIC1 that it has a slave at IRQ2 (0000 0100)
-    iowait();
-    outb(PIC2_DATA_PORT, 0x2);             // tell PIC2 its cascade identity (0000 0010)
-    iowait();
+	// initialization control word 3
+	outb(PIC1_DATA_PORT, 0x4);             // tell PIC1 that it has a slave at IRQ2 (0000 0100)
+	iowait();
+	outb(PIC2_DATA_PORT, 0x2);             // tell PIC2 its cascade identity (0000 0010)
+	iowait();
 
-    // initialization control word 4
-    outb(PIC1_DATA_PORT, PIC_ICW4_8086);
-    iowait();
-    outb(PIC2_DATA_PORT, PIC_ICW4_8086);
-    iowait();
+	// initialization control word 4
+	outb(PIC1_DATA_PORT, PIC_ICW4_8086);
+	iowait();
+	outb(PIC2_DATA_PORT, PIC_ICW4_8086);
+	iowait();
 
-    // clear data registers
-    outb(PIC1_DATA_PORT, 0);
-    iowait();
-    outb(PIC2_DATA_PORT, 0);
-    iowait();
+	// clear data registers
+	outb(PIC1_DATA_PORT, 0);
+	iowait();
+	outb(PIC2_DATA_PORT, 0);
+	iowait();
 }
 
 
 static void idt_set_gate(uint8_t num, uint32_t addressISR, uint16_t segmentSelector,
-                         uint8_t accessGran) {
+						 uint8_t accessGran) {
   idt_entries[num].offset_low = (addressISR & 0xFFFF);
   idt_entries[num].segment_selector = segmentSelector;
   idt_entries[num].alwaysZero = 0;
@@ -96,10 +96,10 @@ void init_idt() {
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
-  
+
   init_pic(PIC1_VECTOR_OFFSET, PIC2_VECTOR_OFFSET);
 
- 
+
   idt_set_gate(0, (uint32_t)ISR0, 0x08, 0x8E);   // ISR 0
   idt_set_gate(1, (uint32_t)ISR1, 0x08, 0x8E);   // ISR 1
   idt_set_gate(2, (uint32_t)ISR2, 0x08, 0x8E);   // ISR 2
@@ -133,7 +133,7 @@ void init_idt() {
   idt_set_gate(30, (uint32_t)ISR30, 0x08, 0x8E); // ISR 30
   idt_set_gate(31, (uint32_t)ISR31, 0x08, 0x8E); // ISR 31
 
-  
+
   idt_set_gate(32, (uint32_t)IRQ0, 0x08, 0x8E);  // IRQ 0
   idt_set_gate(33, (uint32_t)IRQ1, 0x08, 0x8E);  // IRQ 1
   idt_set_gate(34, (uint32_t)IRQ2, 0x08, 0x8E);  // IRQ 2
@@ -157,10 +157,10 @@ void init_idt() {
 
 void idt_enable_entry(int interrupt)
 {
-    FLAG_SET(idt_entries[interrupt].access_gran, IDT_FLAG_PRESENT);
+	FLAG_SET(idt_entries[interrupt].access_gran, IDT_FLAG_PRESENT);
 }
 
 void idt_disable_entry(int interrupt)
 {
-    FLAG_UNSET(idt_entries[interrupt].access_gran, IDT_FLAG_PRESENT);
+	FLAG_UNSET(idt_entries[interrupt].access_gran, IDT_FLAG_PRESENT);
 }

@@ -19,6 +19,7 @@ static isr_routine_ptr isr_map[255] = {NULL};
 
 void register_routines()
 {
+    k_print("[INFO] Registering routines\n");
     isr_map[KBD_INTERRUPT] = &keyboard_read;
 }
 
@@ -26,7 +27,7 @@ void interrupt_handler(int intno)
 {
     if (intno >= 40) {
         outb(0xA0, 0x20);
-    }    
+    }
     if (intno >= 32) {
         outb(0x20, 0x20);
     }
@@ -34,5 +35,5 @@ void interrupt_handler(int intno)
         isr_map[intno]();
     }
     /* Call corresponding isr routine and return wait for new interrupts */
-    return;        
+    return;
 }

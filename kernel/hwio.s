@@ -5,9 +5,9 @@
 outb:
     xorl %eax, %eax
     xorl %edx, %edx
-    mov 8(%esp), %al 
+    mov 8(%esp), %al
     mov 4(%esp), %dx
-    out  %al, %dx 
+    out  %al, %dx
     ret
 
 .global inb
@@ -38,14 +38,14 @@ i686_GDT_Load:
     xor %ebx, %ebx
     pop %eax
     lgdt (%eax)
- 
+
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
     mov %ax, %ss
- 
+
     mov $0x08, %eax
     push %eax
     movl $kernel_main, %edx

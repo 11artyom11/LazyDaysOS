@@ -15,7 +15,7 @@
         iret
 .endm
 
-.macro design_interrupt_with_errcode intno  
+.macro design_interrupt_with_errcode intno
     .global ISR\intno
     .type ISR\intno, @function
     ISR\intno:
@@ -100,7 +100,6 @@ general_interrupt_handler:
     pop %eax
     add $0x8, %esp
     popa
-    sti 
+    sti
     iret
-    
-    
+

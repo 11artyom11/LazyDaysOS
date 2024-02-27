@@ -2,7 +2,7 @@
 #include "idt.h"
 
 static bool boot_successful = false;
-void kernel_main(void) 
+void kernel_main(void)
 {
 	/* Initialize terminal interface */
 	terminal_initialize();
@@ -21,9 +21,8 @@ void kernel_main(void)
 	boot_successful = true;
 	if (boot_successful){
 		k_print("[SUCC] Kernel is ready\n");
-		asm("int $10");
 	} else {
-		k_print("[FAIL] Kernel failed to set up\n");	
+		k_print("[FAIL] Kernel failed to set up\n");
 	}
-	return;
+	asm("int $55"); return;
 }

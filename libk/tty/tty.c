@@ -1,17 +1,17 @@
 #include "tty.h"
 #include "ttyin.h"
 
-uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) 
+uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg)
 {
 	return fg | bg << 4;
 }
- 
-uint16_t vga_entry(unsigned char uc, uint8_t color) 
+
+uint16_t vga_entry(unsigned char uc, uint8_t color)
 {
 	return (uint16_t) uc | (uint16_t) color << 8;
 }
- 
-size_t strlen(const char* str) 
+
+size_t strlen(const char* str)
 {
 	size_t len = 0;
 	while (str[len])
@@ -19,7 +19,7 @@ size_t strlen(const char* str)
 	return len;
 }
 
-void terminal_initialize(void) 
+void terminal_initialize(void)
 {
 	terminal_row = 0;
 	terminal_column = 0;
@@ -33,19 +33,19 @@ void terminal_initialize(void)
 		}
 	}
 }
- 
-void terminal_setcolor(uint8_t color) 
+
+void terminal_setcolor(uint8_t color)
 {
 	terminal_color = color;
 }
- 
-void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) 
+
+void terminal_putentryat(char c, uint8_t color, size_t x, size_t y)
 {
 	const size_t index = y * VGA_WIDTH + x;
 	terminal_buffer[index] = vga_entry(c, color);
 }
- 
-void terminal_putchar(char c) 
+
+void terminal_putchar(char c)
 {
 	if (__NEWLINE == c) {
 		terminal_row ++;
@@ -68,7 +68,7 @@ void terminal_putchar(char c)
 			terminal_row = 0;
 	}
 }
- 
+
 void terminal_put_uint(uint32_t d,
 						enum INT_BASE base,
 							void (*putc)(char))
@@ -77,7 +77,7 @@ void terminal_put_uint(uint32_t d,
 	char buf[K_PRINT_MAX_BUF] ;
 	char* p = &buf[K_PRINT_MAX_BUF-1];
 
-	do 
+	do
 	{
 		*p-- = digits[d % base];
 		d/= base;
@@ -99,14 +99,13 @@ void terminal_put_int(int32_t d)
 	return terminal_put_uint(d, DECIMAL, terminal_putchar);
 }
 
-void terminal_write(const char* data, size_t size) 
+void terminal_write(const char* data, size_t size)
 {
 	for (size_t i = 0; i < size; i++)
 		terminal_putchar(data[i]);
 }
- 
-void terminal_writestring(const char* data) 
+
+void terminal_writestring(const char* data)
 {
 	terminal_write(data, strlen(data));
 }
- 
