@@ -19,7 +19,7 @@ static isr_routine_ptr isr_map[255] = {NULL};
 
 void register_routines()
 {
-    k_print("[INFO] Registering routines\n");
+    k_print("[K_INFO] Registering routines\n");
     isr_map[KBD_INTERRUPT] = &keyboard_read;
 }
 
