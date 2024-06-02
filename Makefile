@@ -29,22 +29,28 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
 KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o
+UTIL_OBJS=memory.o
 LIBK_OBJS=tty.o kio.o ttyin.o
-VPATH=kernel:libk/tty:libk/kio:libk/ttyin
+VPATH=kernel:libk/tty:libk/kio:libk/ttyin:libk/util
 
 all: $(KERN_NAME).bin
 
-$(KERN_NAME).bin: $(KERN_OBJ) $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a
+$(KERN_NAME).bin: $(KERN_OBJ) $(KERNEL_SRC_DIR)/compat/i386/linker.ld libk.a util.a
 	$(info )
 	@echo "$(COLOUR_GREEN)> Linking all together ==> $@ $(COLOUR_END)"	
 
-	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2 $(KERN_OBJ) libk.a -lgcc -o $@
+	$(CC) -T $(KERNEL_SRC_DIR)/compat/i386/linker.ld  $(CFLAGS) -O2 $(KERN_OBJ) libk.a util.a -lgcc -o $@
 
 libk.a: $(LIBK_OBJS)
 	$(info )
 	@echo "$(COLOUR_GREEN)> Building $@ kernel library $(COLOUR_END)"	
 
 	$(AR) rcs $@ $(LIBK_OBJS)
+
+util.a: $(UTIL_OBJS)
+	$(info )
+	@echo "$(COLOUR_GREEN)> Building $@ utility libarary $(COLOUR_END)"	
+	$(AR) rcs $@ $(UTIL_OBJS)
 
 .s.o:
 	$(info )

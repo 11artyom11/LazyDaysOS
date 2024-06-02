@@ -2,6 +2,10 @@
     "files.associations": {
         "*.b32": "bliss",
         "*.r32": "bliss",
+        "*.BLI;6": "bliss",
+        "*.BLI;11": "bliss",
+        "*.BLI;8": "bliss",
+        "*.BLI;10": "bliss",
         "ttyo.h": "c",
         "vgadef.h": "c",
         "tty.h": "c",
@@ -12,7 +16,8 @@
         "hwio.h": "c",
         "stddef.h": "c",
         "ttyin.h": "c",
-        "gdt.h": "c"
+        "gdt.h": "c",
+        "util.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
