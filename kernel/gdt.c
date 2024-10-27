@@ -66,19 +66,24 @@ typedef enum
     GDT_BASE_HIGH(base)                                             \
 }
 
+/* 
+    NOTE:   Granularity bit is set -- therefore second
+            argument in GDT_ENTRY macro spans 4KiB * limit
+    NOTE_2: It is handy to manipulate memory with 4KiB portions.
+ */
 static GDTEntry g_GDT[] = {
     // NULL descriptor
     GDT_ENTRY(0, 0, 0, 0),
 
     // Kernel 32-bit code segment
     GDT_ENTRY(0,
-              0xFFFFF,
+              0x1,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE,
               GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
     // Kernel 32-bit data segment
     GDT_ENTRY(0,
-              0xFFFFF,
+              0x2,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE,
               GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
