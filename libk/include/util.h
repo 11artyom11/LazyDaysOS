@@ -1,19 +1,47 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
-#define TEST_LIMIT 1024
+#define TEST$ARRAY_LIMIT 1024
+
+#define UTIL$MEMTRUNC   (UTIL$SUCCESS + 1)              /* Code is success but memory was truncated */
+#define UTIL$SUCCESS    0x1                             /* General success code */
+#define UTIL$FAIL       0x0                             /* General failure code */
+
+#define LAZY$LIMINV     0x2                             /* Lazy block limit is invalid */
+#define LAZY$BASEINV    0x4                             /* Lazy block base address is invalid */
+#define LAZY$BLOCKINV   (LAZY$LIMINV | LAZY$BASEINV)    /* Lazy block is invalid */
 
 #include <stddef.h>
 #include <stdint.h>
 
-struct __lazy_block
+typedef char* PTR;
+
+struct lazy$block
 {
-    void* _base_addr;
-    uint64_t _limit;
+    PTR lb$base_addr;
+    uint64_t lb$limit;
 };
 
-size_t k_blkcpy_weak (struct __lazy_block* __dest, const struct __lazy_block* __src);
+/* 
++-----------------lazy$block-----------------+
+|                                            |
+|  lb$base_addr  --------------------->   +--|-->  [0]  [1]  [2]  ....  [N]  (Memory Chunk)
+|                                            |
+|--------------------------------------------|
+|                                            |
+|  lb$limit  ---------------> size_t ----->  N (Length of the Memory Chunk) |
+|                                            |
++--------------------------------------------+
+*/
 
-size_t self_test (void);
+size_t lazy$check_integrity (const struct lazy$block* __lb);
+
+size_t util$blkcpy_weak (struct lazy$block* __dest, const struct lazy$block* __src);
+static size_t util$$blkcpy_weak_test (void);
+
+size_t util$blkcpy_strong(struct lazy$block* __dest, const struct lazy$block* __src);
+static size_t util$$blkcpy_strong_test(void);
+
+size_t util$self_test (void);
 
 #endif /* __UTIL__ */
