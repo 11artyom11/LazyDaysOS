@@ -17,7 +17,9 @@
         "stddef.h": "c",
         "ttyin.h": "c",
         "gdt.h": "c",
-        "util.h": "c"
+        "util.h": "c",
+        "kern_powerup.h": "c",
+        "stdint.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

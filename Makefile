@@ -9,9 +9,12 @@ AR=i686-elf-ar
 MACROS=__LF
 KERN_NAME=LazyDaysOS
 LIBK_SRC_DIR=libk
-LIBK_INC_DIR=$(LIBK_SRC_DIR)/include
+ARCH=i386
 KERNEL_SRC_DIR=kernel
-INC=-I$(LIBK_INC_DIR)
+COMPAT_DIR=$(KERNEL_SRC_DIR)/compat/$(ARCH)
+LIBK_INC_DIR=$(LIBK_SRC_DIR)/include
+KERN_INC_DIR=$(COMPAT_DIR)/include
+INC=-I$(LIBK_INC_DIR) -I$(KERN_INC_DIR)
 CFLAGS=-nostdlib -ffreestanding -D $(MACROS) $(INC) -g -O0
 BIN_SRC=isodir
 BOOT_SRC=$(BIN_SRC)/boot
@@ -28,10 +31,10 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o
+KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o $(COMPAT_DIR)/kern_powerup.o
 UTIL_OBJS=memory.o
 LIBK_OBJS=tty.o kio.o ttyin.o
-VPATH=kernel:libk/tty:libk/kio:libk/ttyin:libk/util
+VPATH=kernel:libk/tty:libk/kio:libk/ttyin:libk/util:compat/i386
 
 all: $(KERN_NAME).bin
 
