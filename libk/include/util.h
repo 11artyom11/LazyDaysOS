@@ -42,6 +42,8 @@ static size_t util$$blkcpy_weak_test (void);
 size_t util$blkcpy_strong(struct lazy$block* __dest, const struct lazy$block* __src);
 static size_t util$$blkcpy_strong_test(void);
 
+static size_t util$paging_test (void);
+
 size_t util$self_test (void);
 
 #endif /* __UTIL__ */

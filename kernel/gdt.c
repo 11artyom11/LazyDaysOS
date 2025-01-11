@@ -70,7 +70,7 @@ typedef enum
     NOTE:   Granularity bit is set -- therefore second
             argument in GDT_ENTRY macro spans 4KiB * limit
     NOTE_2: It is handy to manipulate memory with 4KiB portions.
-    NOT_3: Kernel code and data segmets do overlap 1-1 intentionally
+    NOTE_3: Kernel code and data segmets do overlap 1-1 intentionally
  */
 static GDTEntry g_GDT[] = {
     // NULL descriptor
@@ -78,13 +78,22 @@ static GDTEntry g_GDT[] = {
 
     // Kernel 32-bit code segment
     GDT_ENTRY(0x00000,
-              0xFFFFF,
+              0xFFFF,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
     // Kernel 32-bit data segment
     GDT_ENTRY(0x0000,
               0xFFFF,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
+   
+    GDT_ENTRY(0xFFFF,
+              0x1FFFE,
+              GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
+   
+    GDT_ENTRY(0xFFFF,
+              0x1FFFE,
+              GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
+    
 };
 
 GDTDescriptor g_GDTDescriptor = { sizeof(g_GDT) - 1, g_GDT};

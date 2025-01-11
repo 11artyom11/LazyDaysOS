@@ -19,7 +19,8 @@
         "gdt.h": "c",
         "util.h": "c",
         "kern_powerup.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "vm_watchdog.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

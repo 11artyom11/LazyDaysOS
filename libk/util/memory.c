@@ -27,6 +27,27 @@ size_t lazy$check_integrity (const struct lazy$block* __lb)
 }
 
 /**
+ * @brief This test is intended to test the virtual memory tranlation
+ *        process.
+ * 
+ * @return UTIL$SUCCESS if virtual address space is being successfullt trsltd into
+ *         physical
+ * @return UTIL$FAIL otherwise
+ */
+size_t util$paging_test (void)
+{
+    uint32_t *virt_addr = (uint32_t *)0x1FFFE + 0x100;
+    *virt_addr = 0x12345678;  // Write data to virtual address
+
+    // Read data back and verify
+    if (*virt_addr != 0x12345678) {
+        return UTIL$FAIL;
+    }
+    
+    return UTIL$SUCCESS;
+}
+
+/**
  * @brief util$blkcpy_weak function performs weak copy operation on __dest.
  *        Weak copy operation does not allocate new space for __dest lazy block.
  *        __dest hold the address of the __src instead
@@ -219,11 +240,19 @@ static size_t util$$blkcpy_strong_test(void)
 size_t util$self_test (void)
 {
     size_t status = 0;
+
+    k_print("[K_INFO] .........  Test util$$blkcpy_weak_test()\n");
     if ((status = util$$blkcpy_weak_test()) != UTIL$SUCCESS) {
         return status;
     }
 
+    k_print("[K_INFO] .........  Test util$$blkcpy_strong_test()\n");
     if ((status = util$$blkcpy_strong_test()) != UTIL$SUCCESS) {
+        return status;
+    }
+
+    k_print("[K_INFO] .........  Test util$$paging_test()\n");
+    if ((status = util$paging_test()) != UTIL$SUCCESS) {
         return status;
     }
 

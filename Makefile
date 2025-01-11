@@ -31,7 +31,7 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test 
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o $(COMPAT_DIR)/kern_powerup.o
+KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o $(COMPAT_DIR)/kern_powerup.o $(COMPAT_DIR)/vm_watchdog.o
 UTIL_OBJS=memory.o
 LIBK_OBJS=tty.o kio.o ttyin.o
 VPATH=kernel:libk/tty:libk/kio:libk/ttyin:libk/util:compat/i386

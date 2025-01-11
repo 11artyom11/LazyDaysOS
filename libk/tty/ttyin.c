@@ -2,6 +2,8 @@
 #include "../../kernel/hwio.h"
 #include "../include/kio.h"
 
+extern bool input_allowed;
+
 uint8_t keyboard_to_ascii(uint8_t key)
 {
 	if(key == 0x1C) return '\n';
@@ -27,6 +29,9 @@ uint8_t keyboard_to_ascii(uint8_t key)
 
 void keyboard_read()
 {
+	if (false == input_allowed) {
+		return;
+	}
 	uint8_t lastkey = 0;
 	lastkey = inb(0x60);
     lastkey = keyboard_to_ascii(lastkey);

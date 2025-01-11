@@ -4,6 +4,7 @@
 
 
 #define KBD_INTERRUPT MAP_IRQ(1)
+#define PGFLT_INTERRUPT MAP_IRQ(14)
 
 #include <stdint.h>
 #include <kio.h>

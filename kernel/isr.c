@@ -2,6 +2,7 @@
 #include "hwio.h"
 #include "idt.h"
 #include "../libk/include/ttyin.h"
+#include "vm_watchdog.h"
 
 #define PIC1_PORT_A 0x20
 #define PIC2_PORT_A 0xA0
@@ -21,6 +22,7 @@ void register_routines()
 {
     k_print("[K_INFO] Registering routines\n");
     isr_map[KBD_INTERRUPT] = &keyboard_read;
+    isr_map[PGFLT_INTERRUPT] = &pagefault_hander;
 }
 
 void interrupt_handler(int intno)
