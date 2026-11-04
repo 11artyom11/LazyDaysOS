@@ -31,13 +31,40 @@ LazyDaysOS/
 
 ### Prerequisites
 
-Ensure the following tools are installed on your system:
-
+- An **`i686-elf` cross compiler** (`i686-elf-gcc`, `i686-elf-as`, `i686-elf-ar`). The host `gcc` will not work: the kernel refuses to build with a compiler that targets Linux. See the [OSDev wiki: GCC Cross-Compiler](https://wiki.osdev.org/GCC_Cross-Compiler), or the recipe below.
 - `make`
-- `gcc`
-- `nasm`
-- `qemu` (for emulation)
-- `gdb` (for debugging)
+- GRUB with BIOS modules, `xorriso` and `mtools` (for `grub-mkrescue` / `grub-file`)
+- `qemu-system-i386` (for emulation)
+- `gdb` (for debugging), and `gnome-terminal` if you use `debug.sh`
+
+On Ubuntu/Debian:
+
+```bash
+sudo apt install build-essential make grub-pc-bin grub-common xorriso mtools qemu-system-x86 gdb
+```
+
+#### Building the cross compiler
+
+Install the toolchain into `~/opt/cross` (the path `.vscode/c_cpp_properties.json` expects). This builds GMP/MPFR/MPC in-tree, so no extra `-dev` packages are needed:
+
+```bash
+export PREFIX="$HOME/opt/cross" TARGET=i686-elf PATH="$HOME/opt/cross/bin:$PATH"
+mkdir -p ~/opt/cross-build && cd ~/opt/cross-build
+wget https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.xz https://ftp.gnu.org/gnu/gcc/gcc-15.3.0/gcc-15.3.0.tar.xz
+tar xf binutils-2.47.tar.xz && tar xf gcc-15.3.0.tar.xz
+(cd gcc-15.3.0 && ./contrib/download_prerequisites)
+
+mkdir build-binutils && cd build-binutils
+../binutils-2.47/configure --target=$TARGET --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror MAKEINFO=true
+make -j$(nproc) MAKEINFO=true && make install MAKEINFO=true && cd ..
+
+mkdir build-gcc && cd build-gcc
+../gcc-15.3.0/configure --target=$TARGET --prefix="$PREFIX" --disable-nls --enable-languages=c --without-headers --disable-hosted-libstdcxx MAKEINFO=true
+make -j$(nproc) all-gcc all-target-libgcc MAKEINFO=true
+make install-gcc install-target-libgcc MAKEINFO=true
+```
+
+Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
 
 ### Build and Run
 
@@ -51,13 +78,16 @@ Ensure the following tools are installed on your system:
 2. **Build the OS:**
 
    ```bash
-   make
+   make install
    ```
+
+   This builds `LazyDaysOS.bin`, stages it into `sysroot/`, creates `sysroot/boot/kernel/LazyDaysOS.iso` and checks that the kernel is a valid multiboot image. (Plain `make` only builds the kernel binary in the repo root; the boot scripts read from `sysroot/`.)
 
 3. **Boot using QEMU:**
 
    ```bash
-   ./bootit.sh
+   ./bootit.sh          # boot the kernel directly (qemu -kernel)
+   ./bootit.sh --iso    # boot the GRUB ISO; press Enter at the GRUB menu
    ```
 
 4. **Debug with GDB:**
@@ -65,6 +95,16 @@ Ensure the following tools are installed on your system:
    ```bash
    ./debug.sh
    ```
+
+   This opens two terminals: QEMU halted and waiting for a debugger (`./bootit.sh -d`), and GDB using `gdbconf`, which connects to `localhost:1234` and breaks at `_start`.
+
+5. **Clean:**
+
+   ```bash
+   make clean
+   ```
+
+   Headers are not tracked as dependencies, so run `make clean` after editing a `.h` file.
 
 ## Contribution
 

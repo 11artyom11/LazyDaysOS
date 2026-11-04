@@ -3,14 +3,19 @@
         {
             "name": "Linux",
             "includePath": [
-                "/home/tyom/opt/cross/lib/gcc/i686-elf/14.0.0/include/**",
+                "${env:HOME}/opt/cross/lib/gcc/i686-elf/15.3.0/include/**",
                 "${workspaceFolder}/**"
             ],
-            "defines": [],
-            "compilerPath": "/home/tyom/opt/cross/bin/i686-elf-gcc",
-            "cStandard": "c17",
+            "defines": [
+                "__LF"
+            ],
+            "compilerPath": "${env:HOME}/opt/cross/bin/i686-elf-gcc",
+            "compilerArgs": [
+                "-ffreestanding"
+            ],
+            "cStandard": "gnu17",
             "cppStandard": "gnu++17",
-            "intelliSenseMode": "linux-gcc-x64",
+            "intelliSenseMode": "linux-gcc-x86",
             "configurationProvider": "ms-vscode.makefile-tools"
         }
     ],
