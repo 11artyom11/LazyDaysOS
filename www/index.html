@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LazyDaysOS router</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='14' width='26' height='12' rx='3' fill='%2314b8a6'/%3E%3Ccircle cx='9' cy='20' r='2' fill='%23fff'/%3E%3Ccircle cx='15' cy='20' r='2' fill='%23fff'/%3E%3Cpath d='M22 14V6M26 14V9' stroke='%2314b8a6' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f4f6fb; --panel: #ffffff; --panel-2: #f8fafc; --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
+  --down: #14b8a6; --down-soft: rgba(20,184,166,.16); --up: #f97316; --up-soft: rgba(249,115,22,.16);
+  --wan: #8b5cf6; --wan-soft: rgba(139,92,246,.14); --lan: #0ea5e9; --lan-soft: rgba(14,165,233,.14);
+  --ok: #16a34a; --ok-soft: rgba(22,163,74,.14); --bad: #e11d48; --bad-soft: rgba(225,29,72,.13);
+  --warn: #d97706; --gray-soft: rgba(100,116,139,.14);
+  --radius: 14px; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.05);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1020; --panel: #121a2e; --panel-2: #0f1628; --text: #e2e8f0; --muted: #94a3b8; --line: #1f2a44;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1020; --panel: #121a2e; --panel-2: #0f1628; --text: #e2e8f0; --muted: #94a3b8; --line: #1f2a44;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 18px 16px 40px; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.logo { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(135deg, var(--down), var(--lan)); display: grid; place-items: center; }
+.title { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+.subtitle { font-size: 13px; color: var(--muted); }
+.spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 550; }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.ok .dot { animation: pulse 2s infinite; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+@keyframes pulse { 50% { opacity: .35; } }
+.iconbtn { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px; height: 34px; padding: 0 11px; cursor: pointer; font: inherit; font-size: 13px; }
+.iconbtn:hover { border-color: var(--muted); }
+
+.grid { display: grid; gap: 14px; }
+.kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi .value { font-size: 22px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.kpi { padding: 13px 15px; position: relative; overflow: hidden; }
+.kpi .label { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.kpi .label i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.kpi .value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; white-space: nowrap; }
+.kpi .value small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.kpi canvas { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 30px; opacity: .9; }
+
+.section { padding: 15px 16px; }
+.section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.two { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); margin-bottom: 14px; }
+@media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+/* Router faceplate */
+.faceplate { background: linear-gradient(180deg, #1e293b, #0f172a); border-radius: 12px; padding: 14px; display: flex; gap: 10px; overflow-x: auto; }
+.port { flex: 1 0 150px; border-radius: 10px; padding: 10px 11px; cursor: pointer; border: 2px solid transparent; background: rgba(255,255,255,.05); color: #e2e8f0; text-align: left; font: inherit; }
+.port:hover { background: rgba(255,255,255,.09); }
+.port.selected { border-color: var(--down); }
+.port .row { display: flex; align-items: center; gap: 7px; }
+.port .name { font-weight: 650; font-size: 14px; }
+.port .led { width: 9px; height: 9px; border-radius: 50%; background: #475569; }
+.port .led.on { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: blink 1.4s infinite; }
+@keyframes blink { 80% { opacity: 1; } 90% { opacity: .35; } }
+.port .role { margin-left: auto; font-size: 11px; font-weight: 650; letter-spacing: .04em; padding: 1px 7px; border-radius: 6px; }
+.port .role.wan { background: var(--wan); color: #fff; }
+.port .role.lan { background: var(--lan); color: #fff; }
+.port .ip { font-family: var(--mono); font-size: 12.5px; margin-top: 7px; color: #cbd5e1; }
+.port .rates { font-size: 12px; margin-top: 4px; color: #94a3b8; display: flex; gap: 10px; }
+.port .rates b { font-weight: 600; }
+.port .rates .d { color: #5eead4; }
+.port .rates .u { color: #fdba74; }
+
+.chartwrap { position: relative; height: 230px; margin-top: 12px; }
+.chartwrap canvas { width: 100%; height: 100%; display: block; }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin-left: auto; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+/* Devices */
+.devices { display: grid; gap: 8px; }
+.device { display: grid; grid-template-columns: 42px minmax(0, 1.4fr) minmax(0, 1fr) 104px; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+.device.blocked { background: repeating-linear-gradient(135deg, var(--bad-soft) 0 10px, transparent 10px 20px); border-color: var(--bad-soft); }
+.avatar { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 15px; }
+.device .who { min-width: 0; }
+.device .host { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device .meta { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device .traffic { font-size: 12.5px; }
+.device .traffic canvas { width: 100%; height: 26px; display: block; }
+.device .traffic .nums { display: flex; gap: 10px; }
+.d { color: var(--down); } .u { color: var(--up); }
+.switch { justify-self: end; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 5px 11px 5px 5px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; }
+.switch .knob { width: 30px; height: 18px; border-radius: 999px; background: var(--ok); position: relative; transition: background .2s; }
+.switch .knob::after { content: ""; position: absolute; top: 2px; left: 14px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .2s; }
+.switch[aria-checked="true"] .knob { background: var(--bad); }
+.switch[aria-checked="true"] .knob::after { left: 2px; }
+.switch:disabled { opacity: .5; cursor: wait; }
+.badge { display: inline-block; padding: 0 7px; border-radius: 6px; font-size: 11.5px; font-weight: 650; }
+.badge.blocked { background: var(--bad); color: #fff; }
+.badge.idle { background: var(--gray-soft); color: var(--muted); }
+.empty { padding: 22px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
+@media (max-width: 640px) {
+  .device { grid-template-columns: 42px minmax(0, 1fr) auto; }
+  .device .traffic { grid-column: 2 / 4; grid-row: 2; }
+}
+
+/* Events */
+.events { list-style: none; margin: 0; padding: 0; max-height: 405px; overflow-y: auto; }
+.events li { display: grid; grid-template-columns: 74px 1fr; gap: 10px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.events li:last-child { border-bottom: 0; }
+.events li.fresh { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--down-soft); } to { background: transparent; } }
+.chip { justify-self: start; align-self: start; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; text-transform: uppercase; letter-spacing: .03em; }
+.chip.dhcp { background: var(--lan-soft); color: var(--lan); }
+.chip.client { background: var(--down-soft); color: var(--down); }
+.chip.wan { background: var(--wan-soft); color: var(--wan); }
+.chip.firewall { background: var(--bad-soft); color: var(--bad); }
+.chip.system { background: var(--gray-soft); color: var(--muted); }
+.events .when { font-size: 12px; color: var(--muted); }
+
+/* Details */
+details.card > summary { cursor: pointer; padding: 14px 16px; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+details.card[open] > summary::before { transform: rotate(90deg); }
+.details-body { padding: 0 16px 16px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.counters { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 13px; }
+.counters dt { color: var(--muted); }
+.counters dd { margin: 0; font-family: var(--mono); text-align: right; }
+.counters h3 { grid-column: 1 / 3; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 2px; }
+table.routes { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.routes td, table.routes th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+table.routes th { color: var(--muted); font-weight: 500; }
+.bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.bar > div { height: 100%; background: linear-gradient(90deg, var(--down), var(--lan)); }
+footer { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 32 32"><rect x="3" y="14" width="26" height="12" rx="3" fill="#fff"/><circle cx="9" cy="20" r="2" fill="#14b8a6"/><circle cx="15" cy="20" r="2" fill="#14b8a6"/><path d="M22 14V6M26 14V9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
+    </div>
+    <div>
+      <div class="title">LazyDaysOS router</div>
+      <div class="subtitle" id="subtitle">connecting…</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill bad" id="status"><span class="dot"></span><span id="status-text">offline</span></span>
+    <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+  </header>
+
+  <section class="grid kpis" aria-label="Key numbers">
+    <div class="card kpi"><div class="label"><i style="background:var(--down)"></i>Download</div><div class="value" id="k-down">–</div><canvas id="s-down"></canvas></div>
+    <div class="card kpi"><div class="label"><i style="background:var(--up)"></i>Upload</div><div class="value" id="k-up">–</div><canvas id="s-up"></canvas></div>
+    <div class="card kpi"><div class="label"><i style="background:var(--lan)"></i>Forwarded</div><div class="value" id="k-pps">–</div><canvas id="s-pps"></canvas></div>
+    <div class="card kpi"><div class="label"><i style="background:var(--wan)"></i>NAT sessions</div><div class="value" id="k-nat">–</div></div>
+    <div class="card kpi"><div class="label"><i style="background:var(--ok)"></i>Devices online</div><div class="value" id="k-dev">–</div></div>
+    <div class="card kpi"><div class="label"><i style="background:var(--bad)"></i>Blocked by firewall</div><div class="value" id="k-fw">–</div></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card section">
+      <div class="section-head">
+        <h2>Ports</h2>
+        <span class="muted" style="font-size:13px">select a port to chart it</span>
+        <div class="legend"><span><i style="background:var(--down)"></i>received</span><span><i style="background:var(--up)"></i>sent</span></div>
+      </div>
+      <div class="faceplate" id="ports" role="listbox" aria-label="Router ports"></div>
+      <div class="chartwrap"><canvas id="chart" aria-label="Traffic of the selected port over the last two minutes"></canvas></div>
+    </div>
+    <div class="card section">
+      <div class="section-head"><h2>Event log</h2><span class="muted" style="font-size:13px" id="event-count"></span></div>
+      <ul class="events" id="events"></ul>
+    </div>
+  </section>
+
+  <section class="card section" style="margin-bottom:14px">
+    <div class="section-head"><h2>Devices</h2><span class="muted" style="font-size:13px" id="device-count"></span></div>
+    <div class="devices" id="devices"></div>
+  </section>
+
+  <details class="card" id="details">
+    <summary>Routing, counters and memory</summary>
+    <div class="details-body">
+      <div><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Routes</h3><table class="routes" id="routes"></table></div>
+      <dl class="counters" id="counters"></dl>
+      <div id="memory"></div>
+    </div>
+  </details>
+
+  <footer>Served by the LazyDaysOS kernel itself · this page polls <span class="mono">/api/stats</span> once a second</footer>
+</main>
+<script>
+"use strict";
+const HISTORY = 120;                         // seconds of traffic history kept per port
+const $ = (id) => document.getElementById(id);
+const state = { prev: null, ports: {}, clients: {}, kpi: { down: [], up: [], pps: [] }, selected: null, lastEvent: 0, pending: new Set() };
+
+/* ---------- formatting ---------- */
+function fmtBits(bps) {
+  const units = ["bit/s", "kbit/s", "Mbit/s", "Gbit/s"];
+  let i = 0;
+  while (bps >= 1000 && i < units.length - 1) { bps /= 1000; i++; }
+  return [bps < 10 && i ? bps.toFixed(1) : Math.round(bps).toString(), units[i]];
+}
+function fmtBytes(n) {
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return (n < 10 && i ? n.toFixed(1) : Math.round(n)) + " " + units[i];
+}
+function fmtDuration(ms) {
+  let s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600); s %= 3600;
+  const m = Math.floor(s / 60); s %= 60;
+  if (d) return d + "d " + h + "h";
+  if (h) return h + "h " + m + "m";
+  if (m) return m + "m " + s + "s";
+  return s + "s";
+}
+function fmtNum(n) { return Math.round(n).toLocaleString(); }
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function push(arr, v) { arr.push(v); if (arr.length > HISTORY) arr.shift(); }
+// Stable colour per device: FNV-1a hash of its MAC, spread around the wheel by the golden angle
+function colorFor(key) {
+  let h = 2166136261;
+  for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return "hsl(" + Math.round((h % 1000) * 137.508) % 360 + " 62% 48%)";
+}
+
+/* ---------- drawing ---------- */
+function setupCanvas(canvas) {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) {
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, r.width, r.height);
+  return [ctx, r.width, r.height];
+}
+function area(ctx, data, max, w, h, top, color, soft) {
+  if (data.length < 2) return;
+  const step = w / (HISTORY - 1), x0 = w - (data.length - 1) * step;
+  ctx.beginPath();
+  data.forEach((v, i) => { const x = x0 + i * step, y = top + (h - top) * (1 - v / max); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+  ctx.lineTo(w, h); ctx.lineTo(x0, h); ctx.closePath();
+  ctx.fillStyle = soft; ctx.fill();
+}
+function sparkline(canvas, data, color, soft) {
+  const [ctx, w, h] = setupCanvas(canvas);
+  area(ctx, data, Math.max(1, ...data) * 1.15, w, h, 2, color, soft);
+}
+// Axis step of 1, 2 or 5 x 10^n so the four gridlines get round labels
+function niceStep(v) {
+  if (v <= 0) return 250;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+function drawChart() {
+  const port = state.ports[state.selected];
+  const [ctx, w, h] = setupCanvas($("chart"));
+  if (!port) return;
+  const left = 64, bottom = 20, plotW = w - left, plotH = h - bottom;
+  const max = niceStep(Math.max(...port.rx, ...port.tx, 1) / 4) * 4;
+  ctx.font = "12px system-ui, sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--line"); ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = Math.round(plotH * i / 4) + .5;
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w, y); ctx.stroke();
+    const [v, u] = fmtBits(max * (1 - i / 4));
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText(i === 4 ? "0" : v + " " + u.replace("/s", ""), left - 8, Math.min(Math.max(y, 7), plotH - 1));
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  [120, 90, 60, 30].forEach((s) => ctx.fillText("−" + s + "s", left + plotW * (1 - s / HISTORY), h - 4));
+  ctx.textAlign = "right"; ctx.fillText("now", w - 2, h - 4);
+  ctx.save(); ctx.translate(left, 0);
+  area(ctx, port.rx, max, plotW, plotH, 0, cssVar("--down"), cssVar("--down-soft"));
+  area(ctx, port.tx, max, plotW, plotH, 0, cssVar("--up"), cssVar("--up-soft"));
+  ctx.restore();
+}
+
+/* ---------- rendering ---------- */
+// Ports and devices are updated in place (keyed by name / IP), never rebuilt:
+// a tap or click that spans a refresh must still land on the same element.
+const portEls = new Map();
+function renderPorts(ifaces) {
+  const box = $("ports");
+  if (!state.selected || !ifaces.some((p) => p.name === state.selected)) {
+    const wan = ifaces.find((p) => p.role === "wan") || ifaces[0];
+    state.selected = wan && wan.name;
+  }
+  // WAN first, like the back of a real router
+  const sorted = [...ifaces].sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === "wan" ? -1 : 1));
+  for (const [name, e] of portEls) {
+    if (!ifaces.some((p) => p.name === name)) { e.button.remove(); portEls.delete(name); }
+  }
+  sorted.forEach((p, index) => {
+    let e = portEls.get(p.name);
+    if (!e) {
+      e = { button: el("button", "port"), led: el("span", "led"), role: el("span", "role"), ip: el("div", "ip"),
+            rx: el("b"), rxUnit: document.createTextNode(""), tx: el("b"), txUnit: document.createTextNode("") };
+      e.button.type = "button";
+      e.button.setAttribute("role", "option");
+      const row = el("div", "row");
+      row.append(e.led, el("span", "name", p.name), e.role);
+      const rates = el("div", "rates"), rx = el("span", "d"), tx = el("span", "u");
+      rx.append("▼ ", e.rx, e.rxUnit);
+      tx.append("▲ ", e.tx, e.txUnit);
+      rates.append(rx, tx);
+      e.button.append(row, e.ip, rates);
+      e.button.onclick = () => { state.selected = p.name; renderPorts(state.prev.interfaces); drawChart(); };
+      portEls.set(p.name, e);
+    }
+    if (box.children[index] !== e.button) box.insertBefore(e.button, box.children[index] || null);
+    const hist = state.ports[p.name];
+    const [rv, ru] = fmtBits(hist.rx.at(-1) || 0), [tv, tu] = fmtBits(hist.tx.at(-1) || 0);
+    e.button.classList.toggle("selected", p.name === state.selected);
+    e.button.setAttribute("aria-selected", p.name === state.selected);
+    e.led.className = "led" + (p.link ? " on" : "");
+    e.role.className = "role " + p.role;
+    e.role.textContent = p.role.toUpperCase();
+    e.ip.textContent = (p.ipv4 || "no address") + (p.dhcp !== "none" ? "  · DHCP " + p.dhcp : "");
+    e.rx.textContent = rv; e.rxUnit.data = " " + ru;
+    e.tx.textContent = tv; e.txUnit.data = " " + tu;
+  });
+}
+
+function renderKpis(s, dt) {
+  const wan = s.interfaces.find((p) => p.role === "wan");
+  const down = wan ? state.ports[wan.name].rx.at(-1) || 0 : 0;
+  const up = wan ? state.ports[wan.name].tx.at(-1) || 0 : 0;
+  const prev = state.prev;
+  const pps = prev && dt > 0 ? Math.max(0, (s.ipv4.forwarded - prev.ipv4.forwarded) / dt) : 0;
+  push(state.kpi.down, down); push(state.kpi.up, up); push(state.kpi.pps, pps);
+  const setValue = (id, v, unit) => { const e = $(id); e.textContent = v; if (unit) e.append(el("small", "", unit)); };
+  setValue("k-down", ...fmtBits(down));
+  setValue("k-up", ...fmtBits(up));
+  setValue("k-pps", fmtNum(pps), "pkt/s");
+  setValue("k-nat", fmtNum(s.nat.active));
+  setValue("k-dev", s.clients.filter((c) => c.last_seen_s < 60 && !c.blocked).length, "of " + s.clients.length);
+  setValue("k-fw", fmtNum(s.nat.firewall_dropped + s.nat.blocked_dropped), "packets");
+  sparkline($("s-down"), state.kpi.down, cssVar("--down"), cssVar("--down-soft"));
+  sparkline($("s-up"), state.kpi.up, cssVar("--up"), cssVar("--up-soft"));
+  sparkline($("s-pps"), state.kpi.pps, cssVar("--lan"), cssVar("--lan-soft"));
+}
+
+const deviceEls = new Map();
+function renderDevices(clients) {
+  const box = $("devices");
+  $("device-count").textContent = clients.length ? clients.length + " known" : "";
+  if (!clients.length) {
+    deviceEls.clear();
+    box.replaceChildren(el("div", "empty", "No devices yet. They appear here once they get a DHCP lease or send traffic through the router."));
+    return;
+  }
+  if (box.querySelector(".empty")) box.replaceChildren();
+  for (const [ip, e] of deviceEls) {
+    if (!clients.some((c) => c.ip === ip)) { e.row.remove(); deviceEls.delete(ip); }
+  }
+  // A stable order (by address): rows must not move while someone reaches for a switch
+  const sorted = [...clients].sort((a, b) => a.ip.localeCompare(b.ip, undefined, { numeric: true }));
+  sorted.forEach((c, index) => {
+    let e = deviceEls.get(c.ip);
+    if (!e) {
+      e = { row: el("div", "device"), avatar: el("div", "avatar"), name: document.createTextNode(""), badge: el("span", "badge"),
+            addr: el("div", "meta mono"), totals: el("div", "meta"), down: el("span", "d"), up: el("span", "u"),
+            spark: el("canvas"), sw: el("button", "switch"), label: document.createTextNode("") };
+      const who = el("div", "who"), host = el("div", "host");
+      host.append(e.name, " ", e.badge);
+      who.append(host, e.addr, e.totals);
+      const traffic = el("div", "traffic"), nums = el("div", "nums");
+      nums.append(e.down, e.up);
+      traffic.append(nums, e.spark);
+      e.sw.type = "button";
+      e.sw.setAttribute("role", "switch");
+      e.sw.append(el("span", "knob"), e.label);
+      e.sw.onclick = () => toggleBlock(c.ip, e.sw.getAttribute("aria-checked") !== "true");
+      e.row.append(e.avatar, who, traffic, e.sw);
+      deviceEls.set(c.ip, e);
+    }
+    if (box.children[index] !== e.row) box.insertBefore(e.row, box.children[index] || null);
+
+    const hist = state.clients[c.ip];
+    const name = c.hostname || "unknown device";
+    e.row.classList.toggle("blocked", c.blocked);
+    e.avatar.textContent = (c.hostname || c.ip.split(".").pop()).slice(0, 2).toUpperCase();
+    e.avatar.style.background = colorFor(c.mac || c.ip);
+    e.name.data = name;
+    if (c.blocked) { e.badge.className = "badge blocked"; e.badge.textContent = "BLOCKED"; }
+    else if (c.last_seen_s >= 60) { e.badge.className = "badge idle"; e.badge.textContent = "idle " + fmtDuration(c.last_seen_s * 1000); }
+    else { e.badge.className = ""; e.badge.textContent = ""; }
+    e.addr.textContent = c.ip + " · " + (c.mac || "no MAC yet") + " · " + c.port;
+    e.totals.textContent = "↓ " + fmtBytes(c.down_bytes) + "  ↑ " + fmtBytes(c.up_bytes) +
+      (c.lease_s != null ? "  · lease " + fmtDuration(c.lease_s * 1000) : "");
+    const [dv, du] = fmtBits(hist.down.at(-1) || 0), [uv, uu] = fmtBits(hist.up.at(-1) || 0);
+    e.down.textContent = "▼ " + dv + " " + du;
+    e.up.textContent = "▲ " + uv + " " + uu;
+    e.sw.setAttribute("aria-checked", c.blocked);
+    e.sw.setAttribute("aria-label", (c.blocked ? "Unblock " : "Block ") + name);
+    e.sw.disabled = state.pending.has(c.ip);
+    e.label.data = c.blocked ? "Blocked" : "Allowed";
+
+    const [ctx, w, h] = setupCanvas(e.spark);
+    const max = Math.max(1, ...hist.down, ...hist.up) * 1.15;
+    area(ctx, hist.down, max, w, h, 2, cssVar("--down"), cssVar("--down-soft"));
+    area(ctx, hist.up, max, w, h, 2, cssVar("--up"), cssVar("--up-soft"));
+  });
+}
+
+function ago(ms, uptime) {
+  const s = Math.max(0, Math.round((uptime - ms) / 1000));
+  return s < 2 ? "just now" : fmtDuration(s * 1000) + " ago";
+}
+let lastUptime = 0;
+function renderEvents(newEvents, uptime) {
+  const list = $("events");
+  for (const e of newEvents) {
+    const li = el("li", state.lastEvent ? "fresh" : "");
+    li.dataset.time = e.time_ms;
+    const left = el("div");
+    left.append(el("span", "chip " + (/^[a-z]+$/.test(e.category) ? e.category : "system"), e.category));
+    left.append(el("div", "when", ""));
+    li.append(left, el("div", "", e.text));
+    list.prepend(li);
+    state.lastEvent = Math.max(state.lastEvent, e.id);
+  }
+  while (list.children.length > 100) list.lastChild.remove();
+  for (const li of list.children) li.querySelector(".when").textContent = ago(+li.dataset.time, uptime);
+  $("event-count").textContent = list.children.length ? list.children.length + " recent" : "";
+}
+
+function renderDetails(s) {
+  const routes = $("routes");
+  const head = el("tr");
+  ["Network", "Via", "Port"].forEach((t) => head.append(el("th", "", t)));
+  routes.replaceChildren(head, ...s.routes.map((r) => {
+    const tr = el("tr");
+    tr.append(el("td", "mono", r.network), el("td", "mono", r.gateway || "direct"), el("td", "", r.port));
+    return tr;
+  }));
+  const groups = [
+    ["IPv4", s.ipv4], ["NAT", s.nat], ["TCP", s.tcp], ["DHCP server", s.dhcp], ["HTTP", s.http],
+  ];
+  const dl = $("counters");
+  dl.replaceChildren(...groups.flatMap(([title, obj]) => [
+    el("h3", "", title),
+    ...Object.entries(obj).flatMap(([k, v]) => [el("dt", "", k.replace(/_/g, " ")), el("dd", "", fmtNum(v))]),
+  ]));
+  const mem = $("memory");
+  const pct = s.system.heap_size ? s.system.heap_used / s.system.heap_size : 0;
+  const bar = el("div", "bar"); const fill = el("div"); fill.style.width = (pct * 100).toFixed(1) + "%"; bar.append(fill);
+  mem.replaceChildren(el("h3", "", "Kernel heap"), el("div", "mono", fmtBytes(s.system.heap_used) + " of " + fmtBytes(s.system.heap_size) + " used"), bar);
+  mem.firstChild.style.cssText = "font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px";
+}
+
+/* ---------- data ---------- */
+async function getJSON(url, options = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 4000);
+  try {
+    const r = await fetch(url, { ...options, signal: ctl.signal, cache: "no-store" });
+    if (!r.ok) throw new Error(r.status + " " + url);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function track(s) {
+  const prev = state.prev;
+  const dt = prev ? (s.system.uptime_ms - prev.system.uptime_ms) / 1000 : 0;
+  const rate = (now, before) => (dt > 0 && before !== undefined ? Math.max(0, (now - before) * 8 / dt) : 0);
+  for (const p of s.interfaces) {
+    const h = state.ports[p.name] || (state.ports[p.name] = { rx: [], tx: [] });
+    const q = prev && prev.interfaces.find((x) => x.name === p.name);
+    push(h.rx, rate(p.rx_bytes, q && q.rx_bytes));
+    push(h.tx, rate(p.tx_bytes, q && q.tx_bytes));
+  }
+  for (const c of s.clients) {
+    const h = state.clients[c.ip] || (state.clients[c.ip] = { down: [], up: [] });
+    const q = prev && prev.clients.find((x) => x.ip === c.ip);
+    push(h.down, rate(c.down_bytes, q && q.down_bytes));
+    push(h.up, rate(c.up_bytes, q && q.up_bytes));
+  }
+  return dt;
+}
+
+function setOnline(online, detail) {
+  $("status").className = "pill " + (online ? "ok" : "bad");
+  $("status-text").textContent = online ? "online" : "offline";
+  if (detail) $("subtitle").textContent = detail;
+}
+
+let busy = false;
+async function refresh() {
+  if (busy) return;                          // a slow router: don't pile up requests
+  busy = true;
+  try {
+    const s = await getJSON("/api/stats");
+    if (state.prev && s.system.uptime_ms < state.prev.system.uptime_ms) {
+      // The router rebooted: start the history over
+      Object.assign(state, { prev: null, ports: {}, clients: {}, kpi: { down: [], up: [], pps: [] }, lastEvent: 0 });
+      $("events").replaceChildren();
+    }
+    const dt = track(s);
+    const events = await getJSON("/api/events?since=" + state.lastEvent);
+    lastUptime = s.system.uptime_ms;
+    setOnline(true, "up " + fmtDuration(s.system.uptime_ms) + " · kernel ready in " + s.system.ready_ms + " ms · " + s.interfaces.length + " ports");
+    renderKpis(s, dt);
+    renderPorts(s.interfaces);
+    drawChart();
+    renderDevices(s.clients);
+    renderEvents(events, s.system.uptime_ms);
+    if ($("details").open || !state.prev) renderDetails(s);
+    state.prev = s;
+  } catch (err) {
+    setOnline(false, "can't reach the router (" + err.message + "), retrying…");
+  } finally {
+    busy = false;
+  }
+}
+
+async function toggleBlock(ip, block) {
+  state.pending.add(ip);
+  try {
+    await getJSON("/api/" + (block ? "block" : "unblock") + "?ip=" + encodeURIComponent(ip), { method: "POST" });
+  } catch (err) {
+    alert("Couldn't " + (block ? "block " : "unblock ") + ip + ": " + err.message);
+  } finally {
+    state.pending.delete(ip);
+    refresh();
+  }
+}
+
+/* ---------- theme ---------- */
+try {
+  const saved = localStorage.getItem("lazydays-theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+} catch (e) { /* storage unavailable */ }
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("lazydays-theme", document.documentElement.dataset.theme); } catch (e) { /* ignore */ }
+  drawChart();
+};
+$("details").addEventListener("toggle", () => { if (state.prev) renderDetails(state.prev); });
+window.addEventListener("resize", drawChart);
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

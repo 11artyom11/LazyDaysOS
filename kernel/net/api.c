@@ -14,17 +14,19 @@
 #include "../heap.h"
 #include "../system.h"
 
-static const char api$index[] =
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>LazyDaysOS router</title></head>"
-    "<body><h1>LazyDaysOS router</h1>"
-    "<p>The dashboard is coming. Meanwhile, the API:</p>"
-    "<ul><li><a href=\"/api/stats\">/api/stats</a></li><li><a href=\"/api/events\">/api/events</a></li></ul>"
-    "</body></html>";
+/* www/index.html, gzipped by the Makefile and linked in with ld -b binary */
+extern const uint8_t _binary_dashboard_html_gz_start[];
+extern const uint8_t _binary_dashboard_html_gz_end[];
 
 static void api$$index(const struct http_request* req, struct http_response* res)
 {
     (void)req;
-    http_respond_text(res, 200, "text/html; charset=utf-8", api$index);
+    /* Every browser accepts gzip; it keeps the kernel image small */
+    res->status = 200;
+    res->content_type = "text/html; charset=utf-8";
+    res->extra_headers = "Content-Encoding: gzip\r\n";
+    res->body = _binary_dashboard_html_gz_start;
+    res->body_len = (size_t)(_binary_dashboard_html_gz_end - _binary_dashboard_html_gz_start);
 }
 
 /* Give the response a heap buffer to build JSON in; false (and a 503) if there's no memory */

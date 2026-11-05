@@ -459,8 +459,9 @@ for i in range(3):
 
     echo "--- HTTP management API"
     API=http://$ROUTER_LAN
-    check_output "GET / serves the page" "^200 text/html.*LazyDaysOS" sh -c \
-        "curl -s --max-time 5 -w '%{http_code} %{content_type} ' -o $TMP/index $API/ && head -c 300 $TMP/index | tr -d '\n'"
+    check_output "GET / serves the dashboard: gzip, identical to www/index.html" "^200 gzip identical$" sh -c \
+        "curl -s --compressed --max-time 5 -D $TMP/headers -o $TMP/index -w '%{http_code} ' $API/ &&
+         grep -qi '^content-encoding: gzip' $TMP/headers && printf 'gzip ' && cmp -s $TMP/index www/index.html && echo identical"
     curl -s --max-time 5 $API/api/stats > $TMP/stats.json
     check_output "/api/stats is valid JSON describing the router" "^consistent$" python3 - $TMP/stats.json <<'PY'
 import json, sys

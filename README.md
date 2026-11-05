@@ -103,7 +103,15 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
 
    Kernel messages appear both in the QEMU window and, through the serial port, in the terminal you started it from. With `-kernel`, the network card is configured as `10.0.2.15/24` with gateway `10.0.2.2` (QEMU's user networking).
 
-5. **Debug with GDB:**
+5. **See it as a router, with the dashboard:**
+
+   ```bash
+   ./demo.sh
+   ```
+
+   This boots LazyDaysOS as a home router between a simulated LAN with four devices (a phone, a laptop, a TV and a game console, each with its own DHCP lease and traffic) and a simulated Internet, without root. Open **http://localhost:8080** for the live dashboard: per-port traffic, devices with live rates, an event log, and a switch to block any device. Ctrl+C stops it.
+
+6. **Debug with GDB:**
 
    ```bash
    ./debug.sh
@@ -111,7 +119,7 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
 
    This opens two terminals: QEMU halted and waiting for a debugger (`./bootit.sh -d`), and GDB using `gdbconf`, which connects to `localhost:1234` and breaks at `_start`.
 
-6. **Clean:**
+7. **Clean:**
 
    ```bash
    make clean
