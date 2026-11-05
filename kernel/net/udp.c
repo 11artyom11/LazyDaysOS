@@ -90,11 +90,30 @@ void udp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
     icmp_send_error(dev, ICMP_DEST_UNREACH, ICMP_PORT_UNREACH, packet, len);
 }
 
+/* Fill segment with header + data; returns its length */
+static size_t udp$$build(uint8_t* segment, uint32_t src_ip, uint16_t src_port, uint32_t dst_ip,
+                         uint16_t dst_port, const void* data, size_t len)
+{
+    struct udp_header* udp = (struct udp_header*)segment;
+    udp->src_port = net_htons(src_port);
+    udp->dst_port = net_htons(dst_port);
+    udp->length = net_htons(UDP_HEADER_LEN + len);
+    udp->checksum = 0;
+    const uint8_t* bytes = data;
+    for (size_t i = 0; i < len; i++) {
+        segment[UDP_HEADER_LEN + i] = bytes[i];
+    }
+    udp->checksum = udp$$checksum(src_ip, dst_ip, segment, UDP_HEADER_LEN + len);
+    if (udp->checksum == 0) {
+        udp->checksum = 0xFFFF;         /* 0 would mean "no checksum" */
+    }
+    return UDP_HEADER_LEN + len;
+}
+
 bool udp_send(uint32_t src_ip, uint16_t src_port, uint32_t dst_ip, uint16_t dst_port,
               const void* data, size_t len)
 {
     uint8_t segment[UDP_HEADER_LEN + UDP_PAYLOAD_MAX];
-    struct udp_header* udp = (struct udp_header*)segment;
     struct netdev* dev;
     uint32_t next_hop;
 
@@ -108,21 +127,23 @@ bool udp_send(uint32_t src_ip, uint16_t src_port, uint32_t dst_ip, uint16_t dst_
         }
         src_ip = ipv4_iface_address(dev);
     }
-
-    udp->src_port = net_htons(src_port);
-    udp->dst_port = net_htons(dst_port);
-    udp->length = net_htons(UDP_HEADER_LEN + len);
-    udp->checksum = 0;
-    const uint8_t* bytes = data;
-    for (size_t i = 0; i < len; i++) {
-        segment[UDP_HEADER_LEN + i] = bytes[i];
+    size_t seg_len = udp$$build(segment, src_ip, src_port, dst_ip, dst_port, data, len);
+    if (!ipv4_send(src_ip, dst_ip, IP_PROTO_UDP, segment, seg_len)) {
+        return false;
     }
-    udp->checksum = udp$$checksum(src_ip, dst_ip, segment, UDP_HEADER_LEN + len);
-    if (udp->checksum == 0) {
-        udp->checksum = 0xFFFF;         /* 0 would mean "no checksum" */
-    }
+    udp_stats.tx_datagrams++;
+    return true;
+}
 
-    if (!ipv4_send(src_ip, dst_ip, IP_PROTO_UDP, segment, UDP_HEADER_LEN + len)) {
+bool udp_send_dev(struct netdev* dev, uint32_t src_ip, uint16_t src_port, uint32_t dst_ip,
+                  uint16_t dst_port, const void* data, size_t len)
+{
+    uint8_t segment[UDP_HEADER_LEN + UDP_PAYLOAD_MAX];
+    if (len > UDP_PAYLOAD_MAX) {
+        return false;
+    }
+    size_t seg_len = udp$$build(segment, src_ip, src_port, dst_ip, dst_port, data, len);
+    if (!ipv4_send_dev(dev, src_ip, dst_ip, IP_PROTO_UDP, segment, seg_len)) {
         return false;
     }
     udp_stats.tx_datagrams++;

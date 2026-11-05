@@ -32,14 +32,20 @@ struct ipv4_header
 /* Assign an address to an interface (replaces any previous one) and add its connected route */
 void ipv4_set_address(struct netdev* dev, uint32_t addr, uint8_t prefix_len);
 
+/* Remove the address and the connected route; routes via gateways stay */
+void ipv4_clear_address(struct netdev* dev);
+
 /* Interface address in host order, 0 if unconfigured */
 uint32_t ipv4_iface_address(const struct netdev* dev);
+uint32_t ipv4_iface_netmask(const struct netdev* dev);
 
 /* True if ip is assigned to any of our interfaces */
 bool ipv4_is_own_address(uint32_t ip);
 
 /* gateway 0 = directly connected on dev; dev NULL = the interface that reaches gateway */
 bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, struct netdev* dev);
+
+bool ipv4_remove_route(uint32_t network, uint8_t prefix_len);
 
 /* Longest-prefix match; returns false if dst is unreachable */
 bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop);
@@ -53,6 +59,11 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len);
     route or the packet was dropped right away.
 */
 bool ipv4_send(uint32_t src, uint32_t dst, uint8_t protocol, const void* payload, size_t len);
+
+/* Send straight out of dev to dst (on-link or 255.255.255.255) with exactly this
+   source address, without a route lookup; used by DHCP before addresses exist */
+bool ipv4_send_dev(struct netdev* dev, uint32_t src, uint32_t dst, uint8_t protocol,
+                   const void* payload, size_t len);
 
 void ipv4_print_config(void);
 

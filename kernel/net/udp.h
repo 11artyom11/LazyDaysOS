@@ -37,6 +37,10 @@ void udp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
 bool udp_send(uint32_t src_ip, uint16_t src_port, uint32_t dst_ip, uint16_t dst_port,
               const void* data, size_t len);
 
+/* Out of dev with exactly src_ip (may be 0.0.0.0), no route lookup; see ipv4_send_dev */
+bool udp_send_dev(struct netdev* dev, uint32_t src_ip, uint16_t src_port, uint32_t dst_ip,
+                  uint16_t dst_port, const void* data, size_t len);
+
 /* RFC 862 echo service: send every datagram back unchanged */
 void udp_echo_handler(struct netdev* dev, uint32_t src_ip, uint16_t src_port,
                       uint32_t dst_ip, uint16_t dst_port, const uint8_t* data, size_t len);

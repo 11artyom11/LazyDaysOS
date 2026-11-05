@@ -41,6 +41,22 @@ struct netdev* netdev_get(size_t index)
     return index < netdev$count ? &netdev$devices[index] : NULL;
 }
 
+struct netdev* netdev_find(const char* name)
+{
+    for (size_t i = 0; i < netdev$count; i++) {
+        const char* a = netdev$devices[i].name;
+        const char* b = name;
+        while (*a && *a == *b) {
+            a++;
+            b++;
+        }
+        if (*a == '\0' && *b == '\0') {
+            return &netdev$devices[i];
+        }
+    }
+    return NULL;
+}
+
 bool netdev_transmit(struct netdev* dev, const void* frame, size_t len)
 {
     if (len < ETH_HEADER_LEN || len > ETH_FRAME_MAX || !dev->ops->transmit(dev, frame, len)) {

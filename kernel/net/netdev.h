@@ -61,6 +61,7 @@ struct netdev* netdev_register(const struct netdev_ops* ops, void* priv, const u
 
 size_t netdev_count(void);
 struct netdev* netdev_get(size_t index);
+struct netdev* netdev_find(const char* name);       /* by name, e.g. "eth1"; NULL if none */
 
 bool netdev_transmit(struct netdev* dev, const void* frame, size_t len);
 

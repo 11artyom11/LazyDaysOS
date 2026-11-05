@@ -102,15 +102,51 @@ bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, stru
     return true;
 }
 
+bool ipv4_remove_route(uint32_t network, uint8_t prefix_len)
+{
+    uint32_t mask = net_prefix_to_mask(prefix_len);
+    for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
+        struct ipv4$route* r = &ipv4$routes[i];
+        if (r->used && r->network == (network & mask) && r->prefix_len == prefix_len) {
+            r->used = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+void ipv4_clear_address(struct netdev* dev)
+{
+    struct ipv4$iface* iface = ipv4$$iface(dev);
+    if (!iface) {
+        return;
+    }
+    iface->addr = 0;
+    iface->mask = 0;
+    /* Connected routes went with the address; routes via gateways stay */
+    for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
+        if (ipv4$routes[i].used && ipv4$routes[i].dev == dev && ipv4$routes[i].gateway == 0) {
+            ipv4$routes[i].used = false;
+        }
+    }
+}
+
 void ipv4_set_address(struct netdev* dev, uint32_t addr, uint8_t prefix_len)
 {
     struct ipv4$iface* iface = ipv4$$iface(dev);
     if (!iface) {
         return;
     }
+    ipv4_clear_address(dev);
     iface->addr = addr;
     iface->mask = net_prefix_to_mask(prefix_len);
     ipv4_add_route(addr, prefix_len, 0, dev);
+}
+
+uint32_t ipv4_iface_netmask(const struct netdev* dev)
+{
+    struct ipv4$iface* iface = ipv4$$iface(dev);
+    return iface ? iface->mask : 0;
 }
 
 bool ipv4_is_own_address(uint32_t ip)
@@ -229,22 +265,14 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
     }
 }
 
-bool ipv4_send(uint32_t src, uint32_t dst, uint8_t protocol, const void* payload, size_t len)
+static bool ipv4$$output(struct netdev* dev, uint32_t next_hop, uint32_t src, uint32_t dst,
+                         uint8_t protocol, const void* payload, size_t len)
 {
-    struct netdev* dev;
-    uint32_t next_hop;
     uint8_t packet[IPV4_HEADER_LEN + IPV4_PAYLOAD_MAX];
     struct ipv4_header* ip = (struct ipv4_header*)packet;
 
     if (len > IPV4_PAYLOAD_MAX) {
         return false;
-    }
-    if (!ipv4_route_lookup(dst, &dev, &next_hop)) {
-        ipv4_stats.tx_no_route++;
-        return false;
-    }
-    if (src == 0) {
-        src = ipv4_iface_address(dev);
     }
 
     ip->version_ihl = 0x45;
@@ -266,6 +294,27 @@ bool ipv4_send(uint32_t src, uint32_t dst, uint8_t protocol, const void* payload
 
     ipv4_stats.tx_packets++;
     return arp_output(dev, next_hop, packet, IPV4_HEADER_LEN + len);
+}
+
+bool ipv4_send(uint32_t src, uint32_t dst, uint8_t protocol, const void* payload, size_t len)
+{
+    struct netdev* dev;
+    uint32_t next_hop;
+
+    if (!ipv4_route_lookup(dst, &dev, &next_hop)) {
+        ipv4_stats.tx_no_route++;
+        return false;
+    }
+    if (src == 0) {
+        src = ipv4_iface_address(dev);
+    }
+    return ipv4$$output(dev, next_hop, src, dst, protocol, payload, len);
+}
+
+bool ipv4_send_dev(struct netdev* dev, uint32_t src, uint32_t dst, uint8_t protocol,
+                   const void* payload, size_t len)
+{
+    return ipv4$$output(dev, dst, src, dst, protocol, payload, len);
 }
 
 void ipv4_print_config(void)
