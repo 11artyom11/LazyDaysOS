@@ -8,36 +8,14 @@
 #include "../../hwio.h"
 #include "../../isr.h"
 #include "../../net/netdev.h"
+#include "../../net/net.h"
+#include "../../cmdline.h"
 #include <pci.h>
 #include <e1000.h>
 
 #define QEMU_DEBUG_EXIT_PORT 0xF4
 
 bool kern$test_mode = false;
-
-/* True if `word` appears as a whitespace separated token in `cmdline` */
-static bool kern$$cmdline_has(const char* cmdline, const char* word)
-{
-	const char* p = cmdline;
-	while (*p) {
-		while (*p == ' ') {
-			p++;
-		}
-		const char* w = word;
-		const char* t = p;
-		while (*w && *t == *w) {
-			t++;
-			w++;
-		}
-		if (*w == '\0' && (*t == ' ' || *t == '\0')) {
-			return true;
-		}
-		while (*p && *p != ' ') {
-			p++;
-		}
-	}
-	return false;
-}
 
 uint16_t powerup_kernel_i386(const multiboot_info_t* mbi)
 {
@@ -51,7 +29,9 @@ uint16_t powerup_kernel_i386(const multiboot_info_t* mbi)
 		k_print("[K_INFO] kernel now in real mode cr0: 0x%x \n", cr0);
 	}
 
-	if ((mbi->flags & MULTIBOOT_INFO_CMDLINE) && kern$$cmdline_has((const char*)mbi->cmdline, "test")) {
+	cmdline_init((mbi->flags & MULTIBOOT_INFO_CMDLINE) ? (const char*)mbi->cmdline : "");
+	k_print("[K_INFO] command line: %s\n", cmdline_raw());
+	if (cmdline_has("test")) {
 		kern$test_mode = true;
 		k_print("[K_INFO] test mode: self tests decide the QEMU exit status\n");
 	}
@@ -77,6 +57,7 @@ uint16_t powerup_kernel_i386(const multiboot_info_t* mbi)
 
 	pci_initialize();
 	k_print("[K_INFO] network: %u e1000 port(s)\n", (uint32_t)e1000_initialize());
+	net_initialize();
 	return KERN$PWRUP;
 }
 
@@ -110,10 +91,15 @@ size_t kern$self_test(void)
 		return status;
 	}
 
+	k_print("[K_INFO] .........  Test net_util_self_test()\n");
+	if ((status = net_util_self_test()) != UTIL$SUCCESS) {
+		return status;
+	}
+
 	/* Needs QEMU user networking, which only the test setup guarantees */
 	if (kern$test_mode) {
-		k_print("[K_INFO] .........  Test netdev_self_test()\n");
-		if ((status = netdev_self_test()) != UTIL$SUCCESS) {
+		k_print("[K_INFO] .........  Test net_self_test()\n");
+		if ((status = net_self_test()) != UTIL$SUCCESS) {
 			return status;
 		}
 	}

@@ -1,3 +1,4 @@
+#!/bin/sh
 GRUB_CONF_NAME=$1
 OS_NAME=$2
 BIN_LOCATION=$3

@@ -78,7 +78,4 @@ void netdev_run_once(void);
 
 void netdev_print_mac(const uint8_t mac[ETH_ALEN]);
 
-/* ARP-probes QEMU's user-network gateway (10.0.2.2) on every device; test mode only */
-size_t netdev_self_test(void);
-
 #endif /* __NETDEV_H__ */

@@ -1,3 +1,4 @@
+#!/bin/sh
 # Boot the installed kernel in QEMU with one e1000 NIC on QEMU user networking.
 # Serial output (COM1) goes to this terminal.
 #   -d     wait for gdb on localhost:1234 (see gdbconf / debug.sh)
@@ -15,4 +16,10 @@ for arg in "$@"; do
     esac
 done
 
-qemu-system-i386 $FLAGS $MODE $EXECBOOT$EXT
+# Network configuration for the kernel command line (only possible with -kernel)
+NETCONF="eth0=10.0.2.15/24 gw=10.0.2.2"
+if [ "$MODE" = "-kernel" ]; then
+    qemu-system-i386 $FLAGS $MODE $EXECBOOT$EXT -append "$NETCONF"
+else
+    qemu-system-i386 $FLAGS $MODE $EXECBOOT$EXT
+fi

@@ -3,7 +3,7 @@
 #include "idt.h"
 #include "util.h"
 #include "panic.h"
-#include "net/netdev.h"
+#include "net/net.h"
 #include <kern_powerup.h>
 #include <multiboot.h>
 
@@ -48,6 +48,6 @@ void kernel_main(uint32_t magic, const multiboot_info_t* mbi)
 
 	/* Idle: interrupt handlers do the urgent part, received frames are processed here */
 	for (;;) {
-		netdev_run_once();
+		net_run_once();
 	}
 }

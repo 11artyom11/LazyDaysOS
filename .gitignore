@@ -6,3 +6,5 @@ sysroot
 *.d
 qemu_check.log
 qemu_net*.pcap
+qemu_net.log
+qemu_tap.pcap

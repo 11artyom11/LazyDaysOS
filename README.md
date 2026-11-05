@@ -89,7 +89,10 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
    make check
    ```
 
-   This boots the kernel headless in QEMU in test mode. The kernel runs its built-in self tests (memory allocators, interrupts, timer, utilities, and an ARP round trip on two emulated Intel e1000 network cards) and reports the result back to QEMU, so the command passes or fails like a normal test suite. The kernel's serial log is printed and saved to `qemu_check.log`.
+   This runs two stages, both headless in QEMU and without root:
+
+   - **Self tests:** the kernel runs its built-in tests (memory allocators, interrupts, timer, checksums, and pinging the gateways of two emulated Intel e1000 network cards) and reports the result back to QEMU. Serial log: `qemu_check.log`.
+   - **Network tests against Linux:** the kernel is attached to a tap device inside a private network namespace, and real Linux `ping` checks that it answers (including a 1000-ping burst) and ignores what it should ignore. `tcpdump` verifies every checksum in the capture.
 
 4. **Boot using QEMU:**
 
@@ -98,7 +101,7 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
    ./bootit.sh --iso    # boot the GRUB ISO
    ```
 
-   Kernel messages appear both in the QEMU window and, through the serial port, in the terminal you started it from.
+   Kernel messages appear both in the QEMU window and, through the serial port, in the terminal you started it from. With `-kernel`, the network card is configured as `10.0.2.15/24` with gateway `10.0.2.2` (QEMU's user networking).
 
 5. **Debug with GDB:**
 
