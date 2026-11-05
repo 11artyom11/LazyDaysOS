@@ -13,4 +13,10 @@ void outb(uint16_t _port, uint8_t _value);
 /* Read a byte and return from specified HW I/O port */
 uint8_t inb(uint16_t _port);
 
+/* Write a 32-bit value to specified HW I/O port */
+void outl(uint16_t _port, uint32_t _value);
+
+/* Read a 32-bit value from specified HW I/O port */
+uint32_t inl(uint16_t _port);
+
 #endif /*  __HARDWARE_INPUT_OUTPUT__ */

@@ -59,3 +59,22 @@ i686_GDT_Load:
     pop %ebp
     ret
 
+/* void outl(uint16_t port, uint32_t value) */
+.global outl
+.type outl, @function
+
+outl:
+    mov 8(%esp), %eax
+    mov 4(%esp), %dx
+    out %eax, %dx
+    ret
+
+/* uint32_t inl(uint16_t port) */
+.global inl
+.type inl, @function
+
+inl:
+    xorl %edx, %edx
+    mov 4(%esp), %dx
+    in %dx, %eax
+    ret

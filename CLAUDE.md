@@ -4,7 +4,9 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T syntax), booted by GRUB via **Multiboot v1**. It sets up a GDT, remaps the 8259 PICs, installs an IDT, builds a physical frame allocator from the Multiboot memory map, enables paging, creates a kernel heap (`kmalloc`/`kfree`), runs a 100 Hz PIT timer, runs boot-time self-tests, and echoes keyboard input to the VGA text console. Kernel messages are mirrored to COM1. There is no userspace or scheduler yet.
+LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T syntax), booted by GRUB via **Multiboot v1**. It sets up a GDT, remaps the 8259 PICs, installs an IDT, builds a physical frame allocator from the Multiboot memory map, enables paging, creates a kernel heap (`kmalloc`/`kfree`), runs a 100 Hz PIT timer, scans PCI, drives Intel e1000 NICs behind a generic `netdev` layer, runs boot-time self-tests, and echoes keyboard input to the VGA text console. Kernel messages are mirrored to COM1. There is no userspace, scheduler, or IP stack yet.
+
+**Project goal:** a router OS for a degree thesis. The network stack (ARP, IPv4, forwarding, DHCP, NAT, firewall, a small TCP server for a web dashboard) is developed on x86 in QEMU/GNS3 against e1000 NICs, then ported to a MediaTek MT7628 TP-Link router. Keep everything above `netdev` free of x86 and e1000 specifics so it ports unchanged.
 
 ## Toolchain
 
@@ -20,14 +22,14 @@ LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T 
 make               # -> ./LazyDaysOS.bin (objects/archives land in the repo root)
 make check         # boots ./LazyDaysOS.bin headless in QEMU test mode; exit 0 = all self tests passed
 make install       # copies libk + headers + kernel into sysroot/, builds ISO, runs multiboot check
-./bootit.sh        # qemu -kernel sysroot/boot/kernel/LazyDaysOS.bin, serial on this terminal
+./bootit.sh        # qemu -kernel sysroot/boot/kernel/LazyDaysOS.bin, one e1000 on user networking, serial on this terminal
 ./bootit.sh --iso  # qemu -cdrom sysroot/boot/kernel/LazyDaysOS.iso (GRUB boots immediately)
 ./bootit.sh -d     # adds qemu -s -S (waits for gdb on :1234); combinable with --iso
 ./debug.sh         # opens two gnome-terminal windows: qemu -d + `gdb --command=gdbconf` (breaks at _start)
 make clean
 ```
 
-- **Run `make check` after every kernel change.** It passes `test` on the kernel command line, and the kernel then reports its self-test result through QEMU's `isa-debug-exit` device (port `0xF4`): QEMU exit status 1 = pass, 3 = a test failed or the kernel panicked. `check_qemu.sh` prints the serial log (also saved to `qemu_check.log`) and also catches hangs (30 s timeout) and triple faults (`-no-reboot`).
+- **Run `make check` after every kernel change.** It passes `test` on the kernel command line, and the kernel then reports its self-test result through QEMU's `isa-debug-exit` device (port `0xF4`): QEMU exit status 1 = pass, 3 = a test failed or the kernel panicked. `check_qemu.sh` prints the serial log (also saved to `qemu_check.log`) and also catches hangs (30 s timeout) and triple faults (`-no-reboot`). It attaches **two e1000 NICs**, each on its own QEMU user network (slirp), and captures their traffic to `qemu_net0.pcap` / `qemu_net1.pcap` (read with `tcpdump -nn -e -r qemu_net0.pcap`).
 - `bootit.sh` and `debug.sh` read from **`sysroot/`**, so run `make install` (not just `make`) before booting.
 - The `.iso` rule deletes `./LazyDaysOS.bin` and `./LazyDaysOS.iso` after copying them into `sysroot/boot/kernel/`. The next `make` relinks.
 - Header dependencies are tracked with `-MMD -MP` (`*.d` files next to the objects).
@@ -52,6 +54,7 @@ Add `-serial stdio` (or `-serial file:x.log`) to read the console text directly.
 - `CC=i686-elf-gcc -m32`, `CFLAGS=-nostdlib -ffreestanding -D __LF -Ilibk/include -Ikernel/compat/i386/include -g -O0`. Link: `-T kernel/compat/i386/linker.ld ... -lgcc`.
 - Three object groups: `KERN_OBJ` (kernel + compat), `LIBK_OBJS` → `libk.a` (tty, kio, ttyin, serial), `UTIL_OBJS` → `util.a` (memory).
 - **Adding a source file:** append its `.o` to the right group and its directory to `VPATH`. Compat files are referenced with a path prefix (`$(COMPAT_DIR)/foo.o`), so their objects stay next to the source.
+- Generic network code lives in `kernel/net/` (`NET_DIR`); like compat files, its objects are listed with a path prefix.
 - `linker.ld`: load at 1 MiB; `.text` (with `.multiboot` first), `.rodata`, `.data`, `.bss`, all 4K-aligned, wildcards for `.rodata.*` etc. Entry `_start`. `_kernel_start`/`_kernel_end` bound the image; the frame allocator reserves that range.
 
 ## Code map and boot flow
@@ -65,12 +68,15 @@ kernel/idt_hndlr_setup.s   ISR0-31 / IRQ0-15 stubs -> general_interrupt_handler 
 kernel/isr.c/.h            EOI, dispatch through isr_map[], panic on unhandled CPU exceptions, isr_self_test
 kernel/panic.c/.h          k_panic / k_panic_frame: red register dump (+CR2 on #PF), then halt
 kernel/heap.c/.h           kmalloc/kfree: first-fit heap over 4 MiB of contiguous frames
+kernel/net/netdev.c/.h     driver-independent NIC interface: register, transmit, poll, rx handler, stats
 kernel/kernel.c            kernel_main(magic, mbi)
 kernel/compat/i386/        arch-specific:
   kern_powerup.c             powerup_kernel_i386 (bring-up order), kern$self_test, test mode + QEMU exit
   pmm.c                      physical frame bitmap allocator from the Multiboot memory map
   vm_watchdog.c              paging setup
   pit.c                      PIT channel 0 at 100 Hz, tick counter, pit_sleep_ms
+  pci.c                      PCI config mechanism #1, bus scan, BAR decode, pci_enable_device
+  e1000.c                    Intel 82540EM/82545EM driver: 32-entry RX/TX DMA rings, shared IRQ handler
   include/multiboot.h        Multiboot v1 info / mmap structures
 libk/tty/tty.c             VGA text console 80x25 at 0xB8000 (terminal_*)
 libk/tty/serial.c          polled COM1 output, 115200 8N1
@@ -83,15 +89,19 @@ Boot sequence:
 
 1. GRUB enters `_start` in 32-bit protected mode with EAX = Multiboot magic, EBX = info pointer. `_start` sets up its own stack, pushes both, calls `i686_GDT_Initialize()` (loads the GDT, reloads segments, far-returns to reload CS) and then `kernel_main(magic, mbi)`.
 2. `kernel_main`: `terminal_initialize()`, `serial_initialize()`, check the magic, `init_idt()` (PIC remap, gates, `lidt`, `register_routines()`).
-3. `powerup_kernel_i386(mbi)`, still with interrupts off: parse the command line for `test`, `mem$pmm_init` (must run **before** paging; reads Multiboot data physically), `mem$setup_paging`, `mem$heap_init`, `pit_initialize`.
-4. `sti`, then `kern$self_test()` (util, PMM, heap, ISR register preservation, timer). In test mode, exit QEMU with the result.
-5. Set `input_allowed = true` and idle in a `hlt` loop. Everything afterwards happens in IRQ handlers (timer IRQ0, keyboard IRQ1).
+3. `powerup_kernel_i386(mbi)`, still with interrupts off: parse the command line for `test`, `mem$pmm_init` (must run **before** paging; reads Multiboot data physically), `mem$setup_paging`, `mem$heap_init`, `pit_initialize`, `pci_initialize`, `e1000_initialize` (one `netdev` per port, named `eth0`, `eth1`, …).
+4. `sti`, then `kern$self_test()` (util, PMM, heap, ISR register preservation, timer; in test mode also `netdev_self_test`, which ARP-probes QEMU's gateway `10.0.2.2` on every port). In test mode, exit QEMU with the result.
+5. Set `input_allowed = true` and loop on `netdev_run_once()`: poll NICs that have pending frames, otherwise `sti; hlt` until the next interrupt.
+
+Network receive path: the e1000 IRQ handler only reads ICR (which acknowledges the interrupt) and calls `netdev_mark_pending()`. Frames are processed later in `netdev_run_once()` → driver `poll()` → `netdev_receive()` → the single registered `netdev_rx_handler`, i.e. **not in interrupt context**. Frames arriving with no handler registered are counted in `stats.rx_dropped`. Transmit copies the frame into a per-descriptor buffer, so callers may reuse their buffer immediately.
 
 Memory layout (identity mapped, virtual = physical): page 0 is **not present** (NULL dereferences panic with `#PF`, `cr2=0x0`); 4 KiB–4 MiB uses 4 KiB pages; 4 MiB–4 GiB uses 4 MiB PSE pages, uncached above the end of RAM. Frames below 1 MiB, the kernel image and the Multiboot structures are reserved. With QEMU's default 128 MiB, the heap lands right after the kernel image.
 
 ### Things to know before editing low-level code
 
-- Unhandled CPU exceptions (vectors 0–31 with no `isr_map` entry) panic; returning would re-run the faulting instruction. IRQ handlers in `isr_map` are `void (*)(void)` and run **after** the EOI is sent.
+- Unhandled CPU exceptions (vectors 0–31 with no handler) panic; returning would re-run the faulting instruction. Register handlers with `isr_register(vector, fn)`; up to `ISR_MAX_SHARED` per vector, all called on every interrupt (PCI NICs share IRQ lines; QEMU puts them on IRQ 11). Handlers are `void (*)(void)` and run **before** the EOI is sent, because PCI interrupts are level-triggered.
+- DMA uses kernel heap addresses directly: memory is identity mapped, so virtual = physical. This breaks if the heap ever moves to a non-identity mapping.
+- **QEMU's e1000 model holds received frames for 1 s after every write to RCTL** (verified: the first ARP reply consistently arrives ~920 ms after bring-up, and ~410 ms if the probe starts 500 ms later). Don't mistake that for a driver bug; budget for it in timeouts, and expect the same pause if RCTL is rewritten later (e.g. toggling promiscuous mode). `-trace 'e1000x*'` shows the emulated NIC's receive decisions.
 - Stubs push a dummy error code for exceptions without one, so `struct int_frame` is uniform. Error-code vectors: 8, 10–14, 17, 21, 29, 30.
 - `pit_sleep_ms` needs interrupts enabled (it panics otherwise). Self tests that need the timer must run after `sti`.
 - `k_print` writes to serial only after `serial_initialize()`; anything printed earlier is VGA-only.

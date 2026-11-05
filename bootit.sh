@@ -1,7 +1,8 @@
-# Boot the installed kernel in QEMU. Serial output (COM1) goes to this terminal.
+# Boot the installed kernel in QEMU with one e1000 NIC on QEMU user networking.
+# Serial output (COM1) goes to this terminal.
 #   -d     wait for gdb on localhost:1234 (see gdbconf / debug.sh)
 #   --iso  boot the GRUB ISO instead of loading the kernel directly
-FLAGS="-serial stdio"
+FLAGS="-serial stdio -nic user,model=e1000"
 BINROOT="sysroot/boot/kernel"
 EXECBOOT=$BINROOT"/LazyDaysOS"
 MODE="-kernel"

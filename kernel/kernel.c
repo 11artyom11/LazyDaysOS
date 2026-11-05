@@ -3,6 +3,7 @@
 #include "idt.h"
 #include "util.h"
 #include "panic.h"
+#include "net/netdev.h"
 #include <kern_powerup.h>
 #include <multiboot.h>
 
@@ -45,8 +46,8 @@ void kernel_main(uint32_t magic, const multiboot_info_t* mbi)
 	k_print("[K_SUCC] getting kernel ready... Done\n");
 	input_allowed = true;
 
-	/* Idle: everything from here on happens in interrupt handlers */
+	/* Idle: interrupt handlers do the urgent part, received frames are processed here */
 	for (;;) {
-		asm volatile("hlt");
+		netdev_run_once();
 	}
 }

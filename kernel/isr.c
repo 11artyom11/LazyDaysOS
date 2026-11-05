@@ -19,9 +19,10 @@
 
 #define CPU_EXCEPTION_COUNT 32
 
-typedef void (*isr_routine_ptr) (void);
+#define IDT_VECTORS 256
 
-static isr_routine_ptr isr_map[255] = {NULL};
+static isr_routine_ptr isr_map[IDT_VECTORS][ISR_MAX_SHARED];
+static uint8_t isr_count[IDT_VECTORS];
 
 static const char* exception_names[CPU_EXCEPTION_COUNT] = {
     "#DE divide error",             "#DB debug",
@@ -45,8 +46,16 @@ static const char* exception_names[CPU_EXCEPTION_COUNT] = {
 void register_routines()
 {
     k_print("[K_INFO] Registering routines\n");
-    isr_map[TIMER_INTERRUPT] = &pit_tick;
-    isr_map[KBD_INTERRUPT] = &keyboard_read;
+    isr_register(TIMER_INTERRUPT, &pit_tick);
+    isr_register(KBD_INTERRUPT, &keyboard_read);
+}
+
+void isr_register(uint8_t vector, isr_routine_ptr handler)
+{
+    if (isr_count[vector] == ISR_MAX_SHARED) {
+        k_panic("isr_register: too many handlers on one vector");
+    }
+    isr_map[vector][isr_count[vector]++] = handler;
 }
 
 void interrupt_handler(struct int_frame* frame)
@@ -54,8 +63,14 @@ void interrupt_handler(struct int_frame* frame)
     uint32_t intno = frame->intno;
 
     /* A CPU exception nobody handles is fatal: returning would re-run the faulting instruction */
-    if (intno < CPU_EXCEPTION_COUNT && isr_map[intno] == NULL) {
+    if (intno < CPU_EXCEPTION_COUNT && isr_count[intno] == 0) {
         k_panic_frame(exception_names[intno], frame);
+    }
+
+    /* Run handlers before EOI: PCI interrupts are level triggered and stay
+       asserted until the device's handler acknowledges them */
+    for (uint8_t i = 0; i < isr_count[intno]; i++) {
+        isr_map[intno][i]();
     }
 
     if (intno >= 40) {
@@ -64,11 +79,6 @@ void interrupt_handler(struct int_frame* frame)
     if (intno >= 32) {
         outb(0x20, 0x20);
     }
-    if (isr_map[intno] != NULL) {
-        isr_map[intno]();
-    }
-    /* Call corresponding isr routine and return wait for new interrupts */
-    return;
 }
 
 /**

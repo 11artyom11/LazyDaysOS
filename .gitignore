@@ -5,3 +5,4 @@ isodir
 sysroot
 *.d
 qemu_check.log
+qemu_net*.pcap

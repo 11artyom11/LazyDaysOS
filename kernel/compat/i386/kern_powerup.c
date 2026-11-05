@@ -7,6 +7,9 @@
 #include "../../heap.h"
 #include "../../hwio.h"
 #include "../../isr.h"
+#include "../../net/netdev.h"
+#include <pci.h>
+#include <e1000.h>
 
 #define QEMU_DEBUG_EXIT_PORT 0xF4
 
@@ -71,6 +74,9 @@ uint16_t powerup_kernel_i386(const multiboot_info_t* mbi)
 	}
 
 	pit_initialize(PIT_DEFAULT_HZ);
+
+	pci_initialize();
+	k_print("[K_INFO] network: %u e1000 port(s)\n", (uint32_t)e1000_initialize());
 	return KERN$PWRUP;
 }
 
@@ -102,6 +108,14 @@ size_t kern$self_test(void)
 	k_print("[K_INFO] .........  Test pit_self_test()\n");
 	if ((status = pit_self_test()) != UTIL$SUCCESS) {
 		return status;
+	}
+
+	/* Needs QEMU user networking, which only the test setup guarantees */
+	if (kern$test_mode) {
+		k_print("[K_INFO] .........  Test netdev_self_test()\n");
+		if ((status = netdev_self_test()) != UTIL$SUCCESS) {
+			return status;
+		}
 	}
 
 	return UTIL$SUCCESS;

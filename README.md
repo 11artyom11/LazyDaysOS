@@ -89,7 +89,7 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
    make check
    ```
 
-   This boots the kernel headless in QEMU in test mode. The kernel runs its built-in self tests (memory allocators, interrupts, timer, utilities) and reports the result back to QEMU, so the command passes or fails like a normal test suite. The kernel's serial log is printed and saved to `qemu_check.log`.
+   This boots the kernel headless in QEMU in test mode. The kernel runs its built-in self tests (memory allocators, interrupts, timer, utilities, and an ARP round trip on two emulated Intel e1000 network cards) and reports the result back to QEMU, so the command passes or fails like a normal test suite. The kernel's serial log is printed and saved to `qemu_check.log`.
 
 4. **Boot using QEMU:**
 

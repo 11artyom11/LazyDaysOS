@@ -17,7 +17,7 @@
 /* Set when the kernel command line contains the word "test" */
 extern bool kern$test_mode;
 
-/* Memory, paging, heap and timer bring-up. Interrupts stay disabled */
+/* Memory, paging, heap, timer, PCI and network card bring-up. Interrupts stay disabled */
 uint16_t powerup_kernel_i386(const multiboot_info_t* mbi);
 
 /* Run every boot-time self test; needs interrupts enabled for the timer test */
