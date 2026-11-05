@@ -92,7 +92,7 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
    This runs two stages, both headless in QEMU and without root:
 
    - **Self tests:** the kernel runs its built-in tests (memory allocators, interrupts, timer, checksums, and pinging the gateways of two emulated Intel e1000 network cards) and reports the result back to QEMU. Serial log: `qemu_check.log`.
-   - **Network tests against Linux:** the kernel is attached to a tap device inside a private network namespace, and real Linux `ping` checks that it answers (including a 1000-ping burst) and ignores what it should ignore. `tcpdump` verifies every checksum in the capture.
+   - **Router tests against Linux:** the kernel runs as a router between two private network namespaces (a LAN host and a WAN host), and real Linux tools check it as a host and as a router: pings both ways through it, static routes, ICMP error messages, UDP, and loss-free forwarding bursts. `tcpdump` verifies every checksum in the captures.
 
 4. **Boot using QEMU:**
 

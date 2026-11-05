@@ -4,6 +4,7 @@
 #include "arp.h"
 #include "ipv4.h"
 #include "icmp.h"
+#include "udp.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -14,10 +15,9 @@
 
 static uint32_t net$last_tick = 0;
 
-uint16_t net_checksum(const void* data, size_t len)
+uint32_t net_checksum_add(uint32_t sum, const void* data, size_t len)
 {
     const uint8_t* p = data;
-    uint32_t sum = 0;
 
     /* Sum big-endian 16-bit words, so the result is correct on any CPU */
     while (len > 1) {
@@ -28,10 +28,21 @@ uint16_t net_checksum(const void* data, size_t len)
     if (len) {
         sum += (uint32_t)p[0] << 8;
     }
+    /* Fold now so long inputs can't overflow the 32-bit accumulator */
     while (sum >> 16) {
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
+    return sum;
+}
+
+uint16_t net_checksum_finish(uint32_t sum)
+{
     return net_htons((uint16_t)~sum);
+}
+
+uint16_t net_checksum(const void* data, size_t len)
+{
+    return net_checksum_finish(net_checksum_add(0, data, len));
 }
 
 /* Parse a decimal number up to max; advances *text */
@@ -123,6 +134,26 @@ void net_initialize(void)
         ipv4_set_address(dev, addr, prefix_len);
     }
 
+    /* route=net/len,gateway (repeatable): static routes */
+    for (size_t n = 0; cmdline_get("route", n, value, sizeof(value)); n++) {
+        char* comma = value;
+        while (*comma && *comma != ',') {
+            comma++;
+        }
+        uint32_t network, gateway;
+        uint8_t prefix_len;
+        bool ok = *comma == ',';
+        if (ok) {
+            *comma = '\0';
+            ok = net_parse_cidr(value, &network, &prefix_len) && net_parse_ip(comma + 1, &gateway);
+        }
+        if (!ok) {
+            k_print("[K_FAIL] route=%s: expected network/len,gateway e.g. 10.1.0.0/16,10.0.2.1\n", value);
+        } else if (!ipv4_add_route(network, prefix_len, gateway, NULL)) {
+            k_print("[K_FAIL] route to %s: gateway is not on a connected network\n", value);
+        }
+    }
+
     /* gw=a.b.c.d: default route via a directly connected gateway */
     if (cmdline_get("gw", 0, value, sizeof(value))) {
         uint32_t gateway;
@@ -131,6 +162,10 @@ void net_initialize(void)
         } else if (!ipv4_add_route(0, 0, gateway, NULL)) {
             k_print("[K_FAIL] gw=%s: no interface is on the gateway's network\n", value);
         }
+    }
+
+    if (cmdline_has("udp_echo") && udp_bind(UDP_PORT_ECHO, udp_echo_handler)) {
+        k_print("[K_INFO] UDP echo service on port %u\n", UDP_PORT_ECHO);
     }
 
     ipv4_print_config();

@@ -2,6 +2,7 @@
 #include "eth.h"
 #include "ipv4.h"
 #include "net.h"
+#include "icmp.h"
 #include <kio.h>
 #include <pit.h>
 #include "../heap.h"
@@ -226,10 +227,16 @@ void arp_tick(uint32_t now_ms)
         struct arp$entry* e = &arp$table[i];
         if (e->state == ARP$INCOMPLETE && now_ms - e->updated_ms >= ARP_RETRY_MS) {
             if (e->requests >= ARP_MAX_REQUESTS) {
-                if (e->held) {
-                    arp_stats.held_dropped++;
-                }
+                /* Free the slot first: the ICMP error below may need an ARP entry itself */
+                uint8_t* held = e->held;
+                size_t held_len = e->held_len;
+                e->held = NULL;
                 arp$$release(e);
+                if (held) {
+                    arp_stats.held_dropped++;
+                    icmp_send_error(NULL, ICMP_DEST_UNREACH, ICMP_HOST_UNREACH, held, held_len);
+                    kfree(held);
+                }
                 continue;
             }
             e->requests++;

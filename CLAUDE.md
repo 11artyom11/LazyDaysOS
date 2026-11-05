@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T syntax), booted by GRUB via **Multiboot v1**. It sets up a GDT, remaps the 8259 PICs, installs an IDT, builds a physical frame allocator from the Multiboot memory map, enables paging, creates a kernel heap (`kmalloc`/`kfree`), runs a 100 Hz PIT timer, scans PCI, drives Intel e1000 NICs behind a generic `netdev` layer, runs an IPv4 host stack (Ethernet, ARP, IPv4 with a routing table, ICMP echo) configured from the kernel command line, runs boot-time self-tests, and echoes keyboard input to the VGA text console. Kernel messages are mirrored to COM1. There is no userspace, scheduler, UDP/TCP or forwarding yet.
+LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T syntax), booted by GRUB via **Multiboot v1**. It sets up a GDT, remaps the 8259 PICs, installs an IDT, builds a physical frame allocator from the Multiboot memory map, enables paging, creates a kernel heap (`kmalloc`/`kfree`), runs a 100 Hz PIT timer, scans PCI, drives Intel e1000 NICs behind a generic `netdev` layer, runs an IPv4 stack that **forwards between ports** (Ethernet, ARP, IPv4 with a static routing table, ICMP echo and errors, UDP) configured from the kernel command line, runs boot-time self-tests, and echoes keyboard input to the VGA text console. Kernel messages are mirrored to COM1. There is no userspace, scheduler, DHCP, NAT or TCP yet.
 
 **Project goal:** a router OS for a degree thesis. The network stack (ARP, IPv4, forwarding, DHCP, NAT, firewall, a small TCP server for a web dashboard) is developed on x86 in QEMU/GNS3 against e1000 NICs, then ported to a MediaTek MT7628 TP-Link router. Keep everything above `netdev` free of x86 and e1000 specifics so it ports unchanged.
 
@@ -20,7 +20,7 @@ LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T 
 
 ```bash
 make               # -> ./LazyDaysOS.bin (objects/archives land in the repo root)
-make check         # check_qemu.sh (in-kernel self tests) then check_net.sh (Linux pings the kernel); exit 0 = all passed
+make check         # check_qemu.sh (in-kernel self tests) then check_net.sh (router tests against Linux); exit 0 = all passed
 make install       # copies libk + headers + kernel into sysroot/, builds ISO, runs multiboot check
 ./bootit.sh        # qemu -kernel sysroot/boot/kernel/LazyDaysOS.bin, one e1000 on user networking, serial on this terminal
 ./bootit.sh --iso  # qemu -cdrom sysroot/boot/kernel/LazyDaysOS.iso (GRUB boots immediately)
@@ -40,8 +40,11 @@ Whitespace-separated words and `key=value` options (`kernel/cmdline.c`). With `-
 | `test` | test mode: run all self tests, exit QEMU via `isa-debug-exit` |
 | `ethN=a.b.c.d/len` | IPv4 address of port `ethN` (adds the connected route) |
 | `gw=a.b.c.d` | default route via that gateway (must be on a connected network) |
+| `route=net/len,gateway` | static route (repeatable); gateway must be on a connected network |
+| `udp_echo` | enable the RFC 862 UDP echo service on port 7 (testing) |
 | `ping=a.b.c.d` | test mode: the kernel must get an echo reply from it (repeatable) |
-- `check_net.sh` needs no root: it re-runs itself under `unshare --user --map-root-user --net`, creates `tap0` (10.0.9.1/24) in that private namespace, boots the kernel with `eth0=10.0.9.2/24`, and runs real Linux `ping`/`ip neigh` against it: normal, max-size (1472 B, DF) and a 1000-ping burst must get 0% loss; a broadcast ping and a ping to an unassigned address must get none. It then verifies every checksum in `qemu_tap.pcap` with `tcpdump -vv` **outside** the namespace (tcpdump's privilege drop fails inside it). Kernel output: `qemu_net.log`. It prints `[SKIP]` and passes if unprivileged namespaces are unavailable.
+- `check_net.sh` needs no root. It re-runs itself under `unshare --user --map-root-user --net`; that namespace is the **LAN host** (`tap0` 10.0.9.1/24, default via the router). A second namespace (`unshare --net sleep`, entered with the script's `wan` helper = `nsenter --net`) is the **WAN host** (`tap1` 10.0.8.1/24, plus 192.168.50.1/32 on `lo` reachable only via a static route). `tap1` is moved into it *after* QEMU has opened it. The kernel runs with `eth0=10.0.9.2/24 eth1=10.0.8.2/24 route=192.168.50.0/24,10.0.8.1 udp_echo`. Checks use real `ping`, `ip neigh` and Python sockets: host behaviour, forwarding both ways (`ttl=63`), static route, 1000-ping forwarded burst, ICMP time exceeded / net / host / port unreachable, UDP echo, 2000 forwarded UDP datagrams with zero loss. Afterwards `tcpdump -vv` verifies every IP/ICMP/UDP checksum in `qemu_lan.pcap` and `qemu_wan.pcap`, **outside** the namespace (tcpdump's privilege drop fails inside it). Kernel output: `qemu_net.log`. Prints `[SKIP]` and passes if unprivileged namespaces are unavailable.
+- To add a check, use `check_ping "description" "0%|100%" <cmd...>` or `check_output "description" "<regex>" <cmd...>`; prefix the command with `wan` to run it on the WAN host.
 - `bootit.sh` and `debug.sh` read from **`sysroot/`**, so run `make install` (not just `make`) before booting.
 - The `.iso` rule deletes `./LazyDaysOS.bin` and `./LazyDaysOS.iso` after copying them into `sysroot/boot/kernel/`. The next `make` relinks.
 - Header dependencies are tracked with `-MMD -MP` (`*.d` files next to the objects).
@@ -85,7 +88,8 @@ kernel/net/net.c/.h        stack entry (net_initialize, net_run_once), byte orde
 kernel/net/eth.c/.h        Ethernet rx dispatch by EtherType, eth_send
 kernel/net/arp.c/.h        ARP cache (64 entries), replies, resolution with one held packet per destination
 kernel/net/ipv4.c/.h       interface addresses, longest-prefix routing table, header validation, ipv4_send
-kernel/net/icmp.c/.h       echo reply, icmp_ping
+kernel/net/icmp.c/.h       echo reply, icmp_ping, icmp_send_error (time exceeded, net/host/proto/port unreachable)
+kernel/net/udp.c/.h        UDP ports (udp_bind), pseudo-header checksum, udp_send, echo service
 kernel/cmdline.c/.h        kernel command line copy, cmdline_has / cmdline_get
 kernel/kernel.c            kernel_main(magic, mbi)
 kernel/compat/i386/        arch-specific:
@@ -111,7 +115,7 @@ Boot sequence:
 4. `sti`, then `kern$self_test()` (util, PMM, heap, ISR register preservation, timer; in test mode also `netdev_self_test`, which ARP-probes QEMU's gateway `10.0.2.2` on every port). In test mode, exit QEMU with the result.
 5. Set `input_allowed = true` and loop on `net_run_once()`: every 100 ms run protocol timers (`arp_tick`), then `netdev_run_once()` polls NICs with pending frames or does `sti; hlt` until the next interrupt.
 
-Network receive path: the e1000 IRQ handler only reads ICR (which acknowledges the interrupt) and calls `netdev_mark_pending()`. Frames are processed later in `netdev_run_once()` → driver `poll()` → `netdev_receive()` → the single registered `netdev_rx_handler`, i.e. **not in interrupt context**. The registered handler is `eth_receive` → `arp_receive` / `ipv4_receive` → `icmp_receive`. Sending goes `icmp`/caller → `ipv4_send` (route lookup, header, checksum) → `arp_output` (resolve or hold) → `eth_send` → `netdev_transmit`. Every layer copies into its own stack buffer (up to ~4.5 KiB of stack per send). Transmit copies the frame into a per-descriptor buffer, so callers may reuse their buffer immediately.
+Network receive path: the e1000 IRQ handler only reads ICR (which acknowledges the interrupt) and calls `netdev_mark_pending()`. Frames are processed later in `netdev_run_once()` → driver `poll()` → `netdev_receive()` → the single registered `netdev_rx_handler`, i.e. **not in interrupt context**. The registered handler is `eth_receive` → `arp_receive` / `ipv4_receive` → `icmp_receive` / `udp_receive` (→ the handler bound to the port, else ICMP port unreachable). Packets not addressed to us go to `ipv4$$forward`: drop martians (0/8, 127/8, ≥224) and directed broadcasts, TTL ≤ 1 → ICMP time exceeded, no route → net unreachable, else copy, decrement TTL, recompute the header checksum, `arp_output` to the next hop. If ARP gives up on a next hop, the held packet's sender gets ICMP host unreachable. Sending goes `icmp`/caller → `ipv4_send` (route lookup, header, checksum) → `arp_output` (resolve or hold) → `eth_send` → `netdev_transmit`. Every layer copies into its own stack buffer (up to ~4.5 KiB of stack per send). Transmit copies the frame into a per-descriptor buffer, so callers may reuse their buffer immediately.
 
 Memory layout (identity mapped, virtual = physical): page 0 is **not present** (NULL dereferences panic with `#PF`, `cr2=0x0`); 4 KiB–4 MiB uses 4 KiB pages; 4 MiB–4 GiB uses 4 MiB PSE pages, uncached above the end of RAM. Frames below 1 MiB, the kernel image and the Multiboot structures are reserved. With QEMU's default 128 MiB, the heap lands right after the kernel image.
 
@@ -119,7 +123,9 @@ Memory layout (identity mapped, virtual = physical): page 0 is **not present** (
 
 - Unhandled CPU exceptions (vectors 0–31 with no handler) panic; returning would re-run the faulting instruction. Register handlers with `isr_register(vector, fn)`; up to `ISR_MAX_SHARED` per vector, all called on every interrupt (PCI NICs share IRQ lines; QEMU puts them on IRQ 11). Handlers are `void (*)(void)` and run **before** the EOI is sent, because PCI interrupts are level-triggered.
 - Stack conventions (`kernel/net/net.h`): IPv4 addresses are `uint32_t` in **host** byte order everywhere; header structs are packed with fields in **network** order; convert with `net_htons`/`net_htonl` only at the header boundary. `net_checksum()` returns a value ready to store in a header, and checking a received header yields 0. Nothing in `kernel/net/` may include x86 or e1000 headers (`pit.h` for time is the only platform API used).
-- Not implemented yet, by design for now: IP fragment reassembly (fragments are counted and dropped), IP options beyond skipping them, forwarding (`ipv4_stats.rx_not_for_us`), UDP/TCP.
+- `icmp_send_error` enforces RFC 1122's "never send an error about…" rules (ICMP errors, non-first fragments, broadcast/multicast destinations, bad or own sources). Use it for every error so those rules stay in one place.
+- Checksums over several pieces (UDP/TCP pseudo-header + segment): `net_checksum_add` each piece, then `net_checksum_finish`; only the last piece may be odd-length.
+- Not implemented yet: IP fragment reassembly (fragments are counted and dropped) and fragmentation on send, ICMP redirects, ICMP rate limiting, DHCP, NAT, firewall, TCP. Every interface uses MTU 1500.
 - DMA uses kernel heap addresses directly: memory is identity mapped, so virtual = physical. This breaks if the heap ever moves to a non-identity mapping.
 - **QEMU's e1000 model holds received frames for 1 s after every write to RCTL** (verified: the first ARP reply consistently arrives ~920 ms after bring-up, and ~410 ms if the probe starts 500 ms later). Don't mistake that for a driver bug; budget for it in timeouts (self-test pings use 3 s; `check_net.sh` sleeps 1.2 s after boot), and expect the same pause if RCTL is rewritten later (e.g. toggling promiscuous mode). `-trace 'e1000x*'` shows the emulated NIC's receive decisions.
 - Stubs push a dummy error code for exceptions without one, so `struct int_frame` is uniform. Error-code vectors: 8, 10–14, 17, 21, 29, 30.

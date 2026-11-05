@@ -62,10 +62,13 @@ struct ipv4_stats
     uint32_t rx_delivered;
     uint32_t rx_bad_header;             /* version, length or header checksum */
     uint32_t rx_fragments;              /* fragments are not reassembled yet */
-    uint32_t rx_not_for_us;             /* would be forwarded by a router */
     uint32_t rx_unknown_protocol;
     uint32_t tx_packets;
     uint32_t tx_no_route;
+    uint32_t fwd_packets;
+    uint32_t fwd_ttl_exceeded;
+    uint32_t fwd_no_route;
+    uint32_t fwd_martian;               /* bad source/destination or directed broadcast */
 };
 
 extern struct ipv4_stats ipv4_stats;

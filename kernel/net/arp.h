@@ -9,7 +9,7 @@
 #define ARP_TABLE_SIZE      64
 #define ARP_REACHABLE_MS    (5 * 60 * 1000)     /* forget a mapping after 5 minutes */
 #define ARP_RETRY_MS        1000
-#define ARP_MAX_REQUESTS    3                   /* then give up and drop the held packet */
+#define ARP_MAX_REQUESTS    3                   /* then drop the held packet, ICMP host unreachable */
 
 /* Ethernet-layer handler for EtherType 0x0806 */
 void arp_receive(struct netdev* dev, const uint8_t* payload, size_t len);

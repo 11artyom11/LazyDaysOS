@@ -2,6 +2,7 @@
 #include "net.h"
 #include "arp.h"
 #include "icmp.h"
+#include "udp.h"
 #include <kio.h>
 
 #define IPV4_FLAG_MF        0x2000      /* more fragments */
@@ -45,7 +46,7 @@ uint32_t ipv4_iface_address(const struct netdev* dev)
     return iface ? iface->addr : 0;
 }
 
-bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop)
+static struct ipv4$route* ipv4$$best_route(uint32_t dst)
 {
     struct ipv4$route* best = NULL;
     for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
@@ -54,6 +55,12 @@ bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop)
             best = r;
         }
     }
+    return best;
+}
+
+bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop)
+{
+    struct ipv4$route* best = ipv4$$best_route(dst);
     if (!best) {
         return false;
     }
@@ -126,6 +133,56 @@ static bool ipv4$$is_local(const struct netdev* dev, uint32_t dst)
     return iface && iface->addr && dst == (iface->addr | ~iface->mask);
 }
 
+/* Addresses no packet may come from, nor be routed to (RFC 1812 5.3.7) */
+static bool ipv4$$is_martian(uint32_t addr)
+{
+    uint8_t first = addr >> 24;
+    return first == 0 || first == 127 || first >= 224;
+}
+
+static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t len, size_t header_len)
+{
+    const struct ipv4_header* ip = (const struct ipv4_header*)packet;
+    uint32_t src = net_ntohl(ip->src);
+    uint32_t dst = net_ntohl(ip->dst);
+
+    if (ipv4$$is_martian(src) || ipv4$$is_martian(dst)) {
+        ipv4_stats.fwd_martian++;
+        return;
+    }
+    if (ip->ttl <= 1) {
+        ipv4_stats.fwd_ttl_exceeded++;
+        icmp_send_error(ingress, ICMP_TIME_EXCEEDED, 0, packet, len);
+        return;
+    }
+
+    struct ipv4$route* route = ipv4$$best_route(dst);
+    if (!route) {
+        ipv4_stats.fwd_no_route++;
+        icmp_send_error(ingress, ICMP_DEST_UNREACH, ICMP_NET_UNREACH, packet, len);
+        return;
+    }
+    /* Never forward directed broadcasts (RFC 2644) */
+    if (route->gateway == 0 && route->prefix_len < 31 && dst == (dst | ~route->mask)) {
+        ipv4_stats.fwd_martian++;
+        return;
+    }
+
+    uint8_t copy[IPV4_HEADER_LEN + IPV4_PAYLOAD_MAX];
+    for (size_t i = 0; i < len; i++) {
+        copy[i] = packet[i];
+    }
+    struct ipv4_header* out = (struct ipv4_header*)copy;
+    out->ttl--;
+    out->checksum = 0;
+    out->checksum = net_checksum(copy, header_len);
+
+    uint32_t next_hop = route->gateway ? route->gateway : dst;
+    if (arp_output(route->dev, next_hop, copy, len)) {
+        ipv4_stats.fwd_packets++;
+    }
+}
+
 void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
 {
     const struct ipv4_header* ip = (const struct ipv4_header*)packet;
@@ -150,7 +207,7 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
 
     uint32_t dst = net_ntohl(ip->dst);
     if (!ipv4$$is_local(dev, dst)) {
-        ipv4_stats.rx_not_for_us++;
+        ipv4$$forward(dev, packet, total_len, header_len);
         return;
     }
 
@@ -161,8 +218,13 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
         ipv4_stats.rx_delivered++;
         icmp_receive(dev, net_ntohl(ip->src), dst, payload, payload_len);
         break;
+    case IP_PROTO_UDP:
+        ipv4_stats.rx_delivered++;
+        udp_receive(dev, packet, total_len, header_len);
+        break;
     default:
         ipv4_stats.rx_unknown_protocol++;
+        icmp_send_error(dev, ICMP_DEST_UNREACH, ICMP_PROTO_UNREACH, packet, total_len);
         break;
     }
 }

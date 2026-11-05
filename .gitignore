@@ -7,4 +7,6 @@ sysroot
 qemu_check.log
 qemu_net*.pcap
 qemu_net.log
-qemu_tap.pcap
+qemu_lan.pcap
+qemu_wan.pcap
+udp_count.tmp

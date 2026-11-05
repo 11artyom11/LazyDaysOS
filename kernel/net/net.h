@@ -36,6 +36,11 @@ static inline uint32_t net_htonl(uint32_t v)
    Computing it over a header that already contains a valid checksum yields 0. */
 uint16_t net_checksum(const void* data, size_t len);
 
+/* The same in pieces (e.g. pseudo-header + segment): start with sum 0, add each
+   chunk, then finish. Only the last chunk may have an odd length. */
+uint32_t net_checksum_add(uint32_t sum, const void* data, size_t len);
+uint16_t net_checksum_finish(uint32_t sum);
+
 /* Parse "a.b.c.d" (host order result); false on malformed input */
 bool net_parse_ip(const char* text, uint32_t* ip);
 
