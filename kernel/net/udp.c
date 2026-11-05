@@ -41,23 +41,6 @@ void udp_unbind(uint16_t port)
     }
 }
 
-/* Checksum over the IPv4 pseudo-header and the UDP header + data */
-static uint16_t udp$$checksum(uint32_t src, uint32_t dst, const void* segment, size_t len)
-{
-    struct
-    {
-        uint32_t src;
-        uint32_t dst;
-        uint8_t zero;
-        uint8_t protocol;
-        uint16_t length;
-    } __attribute__((packed)) pseudo = {
-        net_htonl(src), net_htonl(dst), 0, IP_PROTO_UDP, net_htons((uint16_t)len)
-    };
-    uint32_t sum = net_checksum_add(0, &pseudo, sizeof(pseudo));
-    return net_checksum_finish(net_checksum_add(sum, segment, len));
-}
-
 void udp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t header_len)
 {
     const struct ipv4_header* ip = (const struct ipv4_header*)packet;
@@ -72,7 +55,7 @@ void udp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
         return;
     }
     segment_len = net_ntohs(udp->length);
-    if (udp->checksum != 0 && udp$$checksum(src, dst, udp, segment_len) != 0) {
+    if (udp->checksum != 0 && net_transport_checksum(src, dst, IP_PROTO_UDP, udp, segment_len) != 0) {
         udp_stats.rx_invalid++;
         return;
     }
@@ -103,7 +86,7 @@ static size_t udp$$build(uint8_t* segment, uint32_t src_ip, uint16_t src_port, u
     for (size_t i = 0; i < len; i++) {
         segment[UDP_HEADER_LEN + i] = bytes[i];
     }
-    udp->checksum = udp$$checksum(src_ip, dst_ip, segment, UDP_HEADER_LEN + len);
+    udp->checksum = net_transport_checksum(src_ip, dst_ip, IP_PROTO_UDP, segment, UDP_HEADER_LEN + len);
     if (udp->checksum == 0) {
         udp->checksum = 0xFFFF;         /* 0 would mean "no checksum" */
     }

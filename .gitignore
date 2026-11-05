@@ -4,9 +4,5 @@ isodir
 *.a
 sysroot
 *.d
-qemu_check.log
-qemu_net*.pcap
-qemu_static.log
-qemu_home.log
-qemu_static_*.pcap
-qemu_home_*.pcap
+qemu_*.log
+qemu_*.pcap

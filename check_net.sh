@@ -16,11 +16,15 @@
 #           names itself the gateway), the router serves DHCP on the LAN and
 #           NATs to the WAN (nat=eth1). The WAN host has NO route back to the
 #           LAN, like the Internet: DHCP both ways, NAT, firewall
+#   tcp     the kernel's own TCP endpoint (tcp_test: echo on 7, 1 MiB chargen
+#           on 19): bulk transfers, many and concurrent connections, then again
+#           with 10% packet loss in both directions (netem; ifb for the
+#           router -> LAN direction)
 #
 # Kernel serial output goes to qemu_<scenario>.log, traffic to qemu_<scenario>_{lan,wan}.pcap.
 
 KERNEL=${1:-LazyDaysOS.bin}
-SCENARIOS="static home"
+SCENARIOS="${SCENARIOS:-static home tcp}"
 LAN_HOST=10.0.9.1
 ROUTER_LAN=10.0.9.2
 ROUTER_WAN=10.0.8.2
@@ -451,6 +455,96 @@ for i in range(3):
     check_output "firewall: unsolicited traffic from the WAN doesn't reach the LAN" "^nothing arrived$" cat $TMP/firewall
     wan ip route del 10.0.9.0/24 via $ROUTER_WAN
     check_ping "router still answers on its WAN address" "0%" wan ping -c 2 -i 0.2 -W 2 $ROUTER_WAN
+}
+
+# ------------------------------------------------------------------- tcp ----
+
+# $1 connections in parallel, $2 bytes each, against the router's echo service.
+# Prints "intact <n>" if every connection got its data back byte for byte.
+tcp_echo_bulk() {
+    python3 - "$1" "$2" "$ROUTER_LAN" <<'PY'
+import os, socket, sys, threading, time
+conns, size, host = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+ok = []
+def one():
+    data = os.urandom(size)
+    c = socket.create_connection((host, 7), timeout=30)
+    threading.Thread(target=c.sendall, args=(data,), daemon=True).start()
+    got = bytearray()
+    while len(got) < size:
+        chunk = c.recv(65536)
+        if not chunk:
+            break
+        got += chunk
+    c.close()
+    ok.append(bytes(got) == data)
+start = time.time()
+threads = [threading.Thread(target=one) for _ in range(conns)]
+for t in threads: t.start()
+for t in threads: t.join()
+elapsed = time.time() - start
+mbit = conns * size * 2 * 8 / elapsed / 1e6
+print(('intact %d' if all(ok) and len(ok) == conns else 'BROKEN %d') % sum(ok) + ' in %.2f s, %.1f Mbit/s both ways' % (elapsed, mbit))
+PY
+}
+
+# Read the chargen stream to EOF; prints "stream <bytes> ok" if the pattern is right
+tcp_chargen() {
+    python3 -c "
+import socket, time
+start = time.time()
+c = socket.create_connection(('$ROUTER_LAN', 19), timeout=30)
+got = bytearray()
+while True:
+    chunk = c.recv(65536)
+    if not chunk:
+        break
+    got += chunk
+good = all(b == i % 251 for i, b in enumerate(got))
+print('stream %d %s in %.2f s' % (len(got), 'ok' if good else 'CORRUPT', time.time() - start))"
+}
+
+scenario_tcp() {
+    start_topology "eth0=$ROUTER_LAN/24 eth1=$ROUTER_WAN/24 tcp_test"
+
+    echo "--- TCP"
+    check_output "echo service answers" "^hello, router$" python3 -c "
+import socket
+c = socket.create_connection(('$ROUTER_LAN', 7), timeout=5)
+c.sendall(b'hello, router'); print(c.recv(100).decode()); c.close()"
+    check_output "1 MiB echoed intact" "^intact 1 " tcp_echo_bulk 1 1048576
+    check_output "chargen: 1 MiB stream, then the router closes" "^stream 1048576 ok " tcp_chargen
+    check_output "closed port: refused with RST" "^refused$" python3 -c "
+import socket
+try:
+    socket.create_connection(('$ROUTER_LAN', 81), timeout=3); print('connected')
+except ConnectionRefusedError:
+    print('refused')"
+    check_output "200 connections one after another" "^200 ok$" python3 -c "
+import socket
+ok = 0
+for i in range(200):
+    c = socket.create_connection(('$ROUTER_LAN', 7), timeout=5)
+    msg = b'connection %d' % i
+    c.sendall(msg)
+    ok += c.recv(100) == msg
+    c.close()
+print('%d ok' % ok)"
+    check_output "8 concurrent connections, 256 KiB each" "^intact 8 " tcp_echo_bulk 8 262144
+
+    echo "--- TCP with 10% packet loss in both directions"
+    tc qdisc add dev tap0 root netem loss 10%
+    ip link add ifb0 type ifb
+    ip link set ifb0 up
+    tc qdisc add dev tap0 handle ffff: ingress
+    tc filter add dev tap0 parent ffff: matchall action mirred egress redirect dev ifb0
+    tc qdisc add dev ifb0 root netem loss 10%
+    check_output "256 KiB echoed intact despite loss" "^intact 1 " tcp_echo_bulk 1 262144
+    check_output "chargen intact despite loss" "^stream 1048576 ok " tcp_chargen
+    check_output "4 concurrent connections intact despite loss" "^intact 4 " tcp_echo_bulk 4 65536
+    tc qdisc del dev tap0 root
+    tc qdisc del dev tap0 ingress
+    check_ping "router is healthy afterwards" "0%" ping -c 3 -i 0.2 -W 2 $ROUTER_LAN
 }
 
 scenario_$SCENARIO

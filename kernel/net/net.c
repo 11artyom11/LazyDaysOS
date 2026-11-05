@@ -7,6 +7,7 @@
 #include "udp.h"
 #include "dhcp.h"
 #include "nat.h"
+#include "tcp.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -47,6 +48,22 @@ uint16_t net_checksum_finish(uint32_t sum)
 uint16_t net_checksum(const void* data, size_t len)
 {
     return net_checksum_finish(net_checksum_add(0, data, len));
+}
+
+uint16_t net_transport_checksum(uint32_t src, uint32_t dst, uint8_t protocol, const void* segment, size_t len)
+{
+    struct
+    {
+        uint32_t src;
+        uint32_t dst;
+        uint8_t zero;
+        uint8_t protocol;
+        uint16_t length;
+    } __attribute__((packed)) pseudo = {
+        net_htonl(src), net_htonl(dst), 0, protocol, net_htons((uint16_t)len)
+    };
+    uint32_t sum = net_checksum_add(0, &pseudo, sizeof(pseudo));
+    return net_checksum_finish(net_checksum_add(sum, segment, len));
 }
 
 uint16_t net_checksum_replace16(uint16_t check, uint16_t old_word, uint16_t new_word)
@@ -257,6 +274,11 @@ void net_initialize(void)
         }
     }
 
+    if (cmdline_has("tcp_test")) {
+        tcp_enable_test_services();
+        k_print("[K_INFO] TCP test services: echo on port 7, 1 MiB chargen on port 19\n");
+    }
+
     if (cmdline_has("udp_echo") && udp_bind(UDP_PORT_ECHO, udp_echo_handler)) {
         k_print("[K_INFO] UDP echo service on port %u\n", UDP_PORT_ECHO);
     }
@@ -273,6 +295,7 @@ void net_run_once(void)
         dhcp_client_tick(now);
         dhcp_server_tick(now);
         nat_tick(now);
+        tcp_tick(now);
     }
     netdev_run_once();
 }

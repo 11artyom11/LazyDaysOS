@@ -41,6 +41,9 @@ uint16_t net_checksum(const void* data, size_t len);
 uint32_t net_checksum_add(uint32_t sum, const void* data, size_t len);
 uint16_t net_checksum_finish(uint32_t sum);
 
+/* TCP/UDP checksum over the IPv4 pseudo-header and segment (addresses in host order) */
+uint16_t net_transport_checksum(uint32_t src, uint32_t dst, uint8_t protocol, const void* segment, size_t len);
+
 /* Update a stored checksum (as found in the header) after a 16/32-bit field
    changed from old to new (host order values), without touching the data */
 uint16_t net_checksum_replace16(uint16_t check, uint16_t old_word, uint16_t new_word);

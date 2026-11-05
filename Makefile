@@ -32,7 +32,7 @@ KERNEL_DEST=$(BOOTDIR)/kernel
 .PHONY: all kernel iso_image test check clean install
 .SUFFIXES: .o .c .s .a .ld .libk.a
 
-KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o panic.o heap.o cmdline.o $(COMPAT_DIR)/kern_powerup.o $(COMPAT_DIR)/vm_watchdog.o $(COMPAT_DIR)/pmm.o $(COMPAT_DIR)/pit.o $(COMPAT_DIR)/pci.o $(COMPAT_DIR)/e1000.o $(NET_DIR)/netdev.o $(NET_DIR)/net.o $(NET_DIR)/eth.o $(NET_DIR)/arp.o $(NET_DIR)/ipv4.o $(NET_DIR)/icmp.o $(NET_DIR)/udp.o $(NET_DIR)/dhcp.o $(NET_DIR)/dhcp_client.o $(NET_DIR)/dhcp_server.o $(NET_DIR)/nat.o
+KERN_OBJ=boot.o kernel.o idt.o hwio.o idt_hndlr_setup.o isr.o gdt.o panic.o heap.o cmdline.o $(COMPAT_DIR)/kern_powerup.o $(COMPAT_DIR)/vm_watchdog.o $(COMPAT_DIR)/pmm.o $(COMPAT_DIR)/pit.o $(COMPAT_DIR)/pci.o $(COMPAT_DIR)/e1000.o $(NET_DIR)/netdev.o $(NET_DIR)/net.o $(NET_DIR)/eth.o $(NET_DIR)/arp.o $(NET_DIR)/ipv4.o $(NET_DIR)/icmp.o $(NET_DIR)/udp.o $(NET_DIR)/dhcp.o $(NET_DIR)/dhcp_client.o $(NET_DIR)/dhcp_server.o $(NET_DIR)/nat.o $(NET_DIR)/tcp.o
 UTIL_OBJS=memory.o
 LIBK_OBJS=tty.o kio.o ttyin.o serial.o
 VPATH=kernel:libk/tty:libk/kio:libk/ttyin:libk/util:compat/i386
@@ -92,7 +92,7 @@ clean:
 
 	rm -f *.o *.d $(COMPAT_DIR)/*.o $(COMPAT_DIR)/*.d $(NET_DIR)/*.o $(NET_DIR)/*.d
 	rm -f *.bin
-	rm -f qemu_check.log qemu_net*.pcap qemu_static.log qemu_home.log qemu_static_*.pcap qemu_home_*.pcap
+	rm -f qemu_*.log qemu_*.pcap
 	rm -f -r ./isodir
 	rm -f *.a
 #   TOneverTHINK : Clean won't delete sysroot?

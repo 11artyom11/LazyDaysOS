@@ -4,6 +4,7 @@
 #include "icmp.h"
 #include "udp.h"
 #include "nat.h"
+#include "tcp.h"
 #include <kio.h>
 
 #define IPV4_FLAG_MF        0x2000      /* more fragments */
@@ -282,6 +283,10 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
     case IP_PROTO_UDP:
         ipv4_stats.rx_delivered++;
         udp_receive(dev, packet, total_len, header_len);
+        break;
+    case IP_PROTO_TCP:
+        ipv4_stats.rx_delivered++;
+        tcp_receive(dev, packet, total_len, header_len);
         break;
     default:
         ipv4_stats.rx_unknown_protocol++;
