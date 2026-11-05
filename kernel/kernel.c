@@ -4,10 +4,15 @@
 #include "util.h"
 #include "panic.h"
 #include "net/net.h"
+#include "net/events.h"
+#include "system.h"
+#include <pit.h>
+#include <strbuf.h>
 #include <kern_powerup.h>
 #include <multiboot.h>
 
 bool input_allowed = false;
+uint32_t system_ready_ms = 0;
 
 void kernel_main(uint32_t magic, const multiboot_info_t* mbi)
 {
@@ -43,6 +48,14 @@ void kernel_main(uint32_t magic, const multiboot_info_t* mbi)
 		kern$test_exit(KERN$TEST_PASS);
 	}
 
+	system_ready_ms = pit_uptime_ms();
+	char text[EVENTS_TEXT_LEN];
+	struct strbuf sb;
+	sb_init(&sb, text, sizeof(text));
+	sb_str(&sb, "kernel ready ");
+	sb_uint(&sb, system_ready_ms);
+	sb_str(&sb, " ms after timer start");
+	events_add("system", text);
 	k_print("[K_SUCC] getting kernel ready... Done\n");
 	input_allowed = true;
 

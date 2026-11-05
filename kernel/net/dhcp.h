@@ -13,6 +13,7 @@
 #define DHCP_OP_REPLY           2       /* BOOTREPLY, server -> client */
 #define DHCP_FLAG_BROADCAST     0x8000
 #define DHCP_OPTIONS_LEN        308     /* makes the whole message 548 bytes */
+#define DHCP_HOSTNAME_MAX       32      /* longest client hostname the server keeps */
 
 /* Message types (option 53) */
 #define DHCPDISCOVER            1
@@ -99,6 +100,13 @@ bool dhcp_server_add_pool(struct netdev* dev, uint32_t first, uint32_t last);
 void dhcp_server_set_dns(uint32_t dns);
 void dhcp_server_set_lease_time(uint32_t seconds);
 void dhcp_server_tick(uint32_t now_ms);
+
+/* Bound lease for ip: MAC (if mac != NULL), hostname, seconds left. False if none */
+bool dhcp_server_lease_info(uint32_t ip, uint8_t mac[ETH_ALEN], char* hostname, size_t hostname_cap,
+                            uint32_t* remaining_s);
+size_t dhcp_server_lease_count(void);
+bool dhcp_server_has_pool(const struct netdev* dev);
+bool dhcp_client_running(const struct netdev* dev);
 
 struct dhcp_stats
 {

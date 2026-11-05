@@ -4,6 +4,9 @@
 #include "udp.h"
 #include <kio.h>
 #include <pit.h>
+#include <strbuf.h>
+#include "events.h"
+#include "clients.h"
 
 /*
     RFC 2131 server for directly attached clients (no relay agents). Each pool
@@ -37,6 +40,7 @@ struct dhcps$lease
     uint32_t ip;
     uint8_t mac[ETH_ALEN];
     uint32_t expires_ms;
+    char hostname[DHCP_HOSTNAME_MAX + 1];
 };
 
 static struct dhcps$pool dhcps$pools[DHCPS_MAX_POOLS];
@@ -86,6 +90,7 @@ static struct dhcps$lease* dhcps$$new_lease(struct dhcps$pool* pool, uint32_t ip
     for (int i = 0; i < DHCPS_MAX_LEASES; i++) {
         struct dhcps$lease* l = &dhcps$leases[i];
         if (l->state == DHCPS$FREE) {
+            l->hostname[0] = '\0';
             l->pool = pool;
             l->ip = ip;
             for (int b = 0; b < ETH_ALEN; b++) {
@@ -148,10 +153,45 @@ static void dhcps$$reply(struct dhcps$pool* pool, const struct dhcp_message* req
     }
 }
 
-static void dhcps$$bind_lease(struct dhcps$lease* lease, uint32_t now)
+/* Remember the client's hostname (option 12), keeping only printable ASCII */
+static void dhcps$$save_hostname(struct dhcps$lease* lease, const struct dhcp_message* msg, size_t len)
 {
+    uint8_t name_len;
+    const uint8_t* name = dhcp_find_option(msg, len, DHCP_OPT_HOSTNAME, &name_len);
+    if (!name) {
+        return;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < name_len && n < DHCP_HOSTNAME_MAX; i++) {
+        if (name[i] >= 0x20 && name[i] < 0x7F) {
+            lease->hostname[n++] = (char)name[i];
+        }
+    }
+    lease->hostname[n] = '\0';
+}
+
+static void dhcps$$bind_lease(struct dhcps$pool* pool, struct dhcps$lease* lease,
+                              const struct dhcp_message* msg, size_t len, uint32_t now)
+{
+    bool renewal = lease->state == DHCPS$BOUND;
     lease->state = DHCPS$BOUND;
     lease->expires_ms = now + dhcps$lease_s * 1000;
+    dhcps$$save_hostname(lease, msg, len);
+    if (!renewal) {
+        char text[EVENTS_TEXT_LEN];
+        struct strbuf sb;
+        sb_init(&sb, text, sizeof(text));
+        sb_ip(&sb, lease->ip);
+        sb_str(&sb, " leased to ");
+        sb_mac(&sb, lease->mac);
+        if (lease->hostname[0]) {
+            sb_str(&sb, " (");
+            sb_str(&sb, lease->hostname);
+            sb_char(&sb, ')');
+        }
+        events_add("dhcp", text);
+        clients_account(pool->dev, lease->ip, 0, 0);
+    }
 }
 
 static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_message* msg, size_t len, uint32_t now)
@@ -171,7 +211,7 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
             return;
         }
         if (lease && lease->ip == requested) {
-            dhcps$$bind_lease(lease, now);
+            dhcps$$bind_lease(pool, lease, msg, len, now);
             dhcp_stats.server_acks++;
             dhcps$$reply(pool, msg, DHCPACK, lease->ip);
         } else {
@@ -191,7 +231,7 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
     bool on_our_net = (ip & mask) == (ipv4_iface_address(pool->dev) & mask);
 
     if (lease && lease->ip == ip) {
-        dhcps$$bind_lease(lease, now);
+        dhcps$$bind_lease(pool, lease, msg, len, now);
         dhcp_stats.server_acks++;
         dhcps$$reply(pool, msg, DHCPACK, ip);
         return;
@@ -200,7 +240,7 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
         /* A client we forgot (e.g. after a reboot): give it back its address */
         lease = dhcps$$new_lease(pool, ip, msg->chaddr);
         if (lease) {
-            dhcps$$bind_lease(lease, now);
+            dhcps$$bind_lease(pool, lease, msg, len, now);
             dhcp_stats.server_acks++;
             dhcps$$reply(pool, msg, DHCPACK, ip);
             return;
@@ -309,6 +349,48 @@ void dhcp_server_set_dns(uint32_t dns)
 void dhcp_server_set_lease_time(uint32_t seconds)
 {
     dhcps$lease_s = seconds;
+}
+
+bool dhcp_server_lease_info(uint32_t ip, uint8_t mac[ETH_ALEN], char* hostname, size_t hostname_cap,
+                            uint32_t* remaining_s)
+{
+    struct dhcps$lease* l = dhcps$$by_ip(ip);
+    if (!l || l->state != DHCPS$BOUND) {
+        return false;
+    }
+    if (mac) {
+        for (int i = 0; i < ETH_ALEN; i++) {
+            mac[i] = l->mac[i];
+        }
+    }
+    size_t n = 0;
+    for (; l->hostname[n] && n + 1 < hostname_cap; n++) {
+        hostname[n] = l->hostname[n];
+    }
+    if (hostname_cap) {
+        hostname[n] = '\0';
+    }
+    *remaining_s = (l->expires_ms - pit_uptime_ms()) / 1000;
+    return true;
+}
+
+bool dhcp_server_has_pool(const struct netdev* dev)
+{
+    for (int i = 0; i < DHCPS_MAX_POOLS; i++) {
+        if (dhcps$pools[i].dev == dev) {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t dhcp_server_lease_count(void)
+{
+    size_t n = 0;
+    for (int i = 0; i < DHCPS_MAX_LEASES; i++) {
+        n += dhcps$leases[i].state == DHCPS$BOUND;
+    }
+    return n;
 }
 
 void dhcp_server_tick(uint32_t now_ms)

@@ -8,6 +8,8 @@
 #include "dhcp.h"
 #include "nat.h"
 #include "tcp.h"
+#include "http.h"
+#include "api.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -279,6 +281,14 @@ void net_initialize(void)
         k_print("[K_INFO] TCP test services: echo on port 7, 1 MiB chargen on port 19\n");
     }
 
+    if (cmdline_has("http")) {
+        if (api_start(80)) {
+            k_print("[K_INFO] HTTP management interface on port 80 (inside ports only)\n");
+        } else {
+            k_print("[K_FAIL] HTTP: could not start the server\n");
+        }
+    }
+
     if (cmdline_has("udp_echo") && udp_bind(UDP_PORT_ECHO, udp_echo_handler)) {
         k_print("[K_INFO] UDP echo service on port %u\n", UDP_PORT_ECHO);
     }
@@ -296,6 +306,7 @@ void net_run_once(void)
         dhcp_server_tick(now);
         nat_tick(now);
         tcp_tick(now);
+        http_tick(now);
     }
     netdev_run_once();
 }

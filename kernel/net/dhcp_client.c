@@ -4,6 +4,8 @@
 #include "udp.h"
 #include <kio.h>
 #include <pit.h>
+#include <strbuf.h>
+#include "events.h"
 
 /*
     RFC 2131 client state machine, one instance per interface:
@@ -192,6 +194,15 @@ static void dhcpc$$apply_ack(struct dhcpc$client* c, const struct dhcp_message* 
     dhcpc$$enter(c, DHCPC$BOUND, now);
 
     if (changed) {
+        char text[EVENTS_TEXT_LEN];
+        struct strbuf sb;
+        sb_init(&sb, text, sizeof(text));
+        sb_str(&sb, c->dev->name);
+        sb_str(&sb, " got ");
+        sb_ip(&sb, ip);
+        sb_str(&sb, " from DHCP server ");
+        sb_ip(&sb, c->server_id);
+        events_add("wan", text);
         k_print("[K_INFO] dhcp: %s bound ", c->dev->name);
         net_print_ip(ip);
         k_print("/%u", dhcpc$$prefix_len(mask));
@@ -331,6 +342,16 @@ void dhcp_client_tick(uint32_t now_ms)
             break;
         }
     }
+}
+
+bool dhcp_client_running(const struct netdev* dev)
+{
+    for (int i = 0; i < DHCPC_MAX; i++) {
+        if (dhcpc$clients[i].dev == dev) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool dhcp_client_all_bound(void)

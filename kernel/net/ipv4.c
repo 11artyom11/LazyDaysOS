@@ -5,6 +5,7 @@
 #include "udp.h"
 #include "nat.h"
 #include "tcp.h"
+#include "clients.h"
 #include <kio.h>
 
 #define IPV4_FLAG_MF        0x2000      /* more fragments */
@@ -214,6 +215,20 @@ static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t 
         return;
     }
 
+    /* Per-device accounting and the dashboard's block switch, for hosts on inside ports */
+    bool from_inside = !nat_is_outside(ingress);
+    bool to_inside = !nat_is_outside(route->dev);
+    if ((from_inside && clients_is_blocked(src)) || (to_inside && clients_is_blocked(dst))) {
+        clients_stats.blocked_packets++;
+        return;
+    }
+    if (from_inside) {
+        clients_account(ingress, src, len, 0);
+    }
+    if (to_inside) {
+        clients_account(route->dev, dst, 0, len);
+    }
+
     uint8_t copy[IPV4_HEADER_LEN + IPV4_PAYLOAD_MAX];
     for (size_t i = 0; i < len; i++) {
         copy[i] = packet[i];
@@ -345,6 +360,61 @@ bool ipv4_send_dev(struct netdev* dev, uint32_t src, uint32_t dst, uint8_t proto
                    const void* payload, size_t len)
 {
     return ipv4$$output(dev, dst, src, dst, protocol, payload, len);
+}
+
+struct netdev* ipv4_iface_with_address(uint32_t ip)
+{
+    for (size_t i = 0; i < netdev_count(); i++) {
+        if (ipv4$ifaces[i].addr && ipv4$ifaces[i].addr == ip) {
+            return netdev_get(i);
+        }
+    }
+    return NULL;
+}
+
+uint8_t ipv4_prefix_len(uint32_t mask)
+{
+    uint8_t len = 0;
+    while (mask & 0x80000000) {
+        len++;
+        mask <<= 1;
+    }
+    return len;
+}
+
+void ipv4_routes_json(struct strbuf* sb)
+{
+    bool first = true;
+    sb_char(sb, '[');
+    for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
+        struct ipv4$route* r = &ipv4$routes[i];
+        if (!r->used) {
+            continue;
+        }
+        if (!first) {
+            sb_char(sb, ',');
+        }
+        first = false;
+        sb_char(sb, '{');
+        sb_json_key(sb, "network", true);
+        sb_char(sb, '"');
+        sb_ip(sb, r->network);
+        sb_char(sb, '/');
+        sb_uint(sb, r->prefix_len);
+        sb_char(sb, '"');
+        sb_json_key(sb, "gateway", false);
+        if (r->gateway) {
+            sb_char(sb, '"');
+            sb_ip(sb, r->gateway);
+            sb_char(sb, '"');
+        } else {
+            sb_str(sb, "null");
+        }
+        sb_json_key(sb, "port", false);
+        sb_json_str(sb, r->dev->name);
+        sb_char(sb, '}');
+    }
+    sb_char(sb, ']');
 }
 
 void ipv4_print_config(void)

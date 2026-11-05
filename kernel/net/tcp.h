@@ -72,6 +72,7 @@ void tcp_close(struct tcp_conn* conn);
 void tcp_set_user(struct tcp_conn* conn, void* user);
 void* tcp_get_user(const struct tcp_conn* conn);
 uint32_t tcp_remote_ip(const struct tcp_conn* conn);
+uint32_t tcp_local_ip(const struct tcp_conn* conn);
 
 /* IPv4 handler for protocol 6 (local delivery); gets the whole IP packet */
 void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t header_len);

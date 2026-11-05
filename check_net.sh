@@ -15,7 +15,8 @@
 #   home    eth1=dhcp from dnsmasq on the WAN host (which reserves 10.0.8.2 and
 #           names itself the gateway), the router serves DHCP on the LAN and
 #           NATs to the WAN (nat=eth1). The WAN host has NO route back to the
-#           LAN, like the Internet: DHCP both ways, NAT, firewall
+#           LAN, like the Internet: DHCP both ways, NAT, firewall, and the
+#           HTTP management API (stats, events, block/unblock, error handling)
 #   tcp     the kernel's own TCP endpoint (tcp_test: echo on 7, 1 MiB chargen
 #           on 19): bulk transfers, many and concurrent connections, then again
 #           with 10% packet loss in both directions (netem; ifb for the
@@ -331,7 +332,7 @@ scenario_home() {
     chmod +x $UDHCPC_SCRIPT
 
     WAN_ROUTE_BACK=no
-    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600 nat=eth1"
+    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600 nat=eth1 http"
     wan dnsmasq --no-daemon --conf-file=/dev/null --user=root --port=0 \
         --interface=tap1 --bind-interfaces --dhcp-authoritative \
         --dhcp-range=10.0.8.100,10.0.8.150,10m --dhcp-host=$ROUTER_WAN_MAC,$ROUTER_WAN \
@@ -353,7 +354,7 @@ scenario_home() {
     echo "--- DHCP server on the LAN port"
     check_output "udhcpc gets a lease from the router" \
         "bound ip=10\.0\.9\.1[0-5][0-9] subnet=255\.255\.255\.0 router=$ROUTER_LAN dns=10\.0\.8\.53 lease=600" \
-        busybox udhcpc -i tap0 -n -q -f -t 4 -T 2 -s $UDHCPC_SCRIPT
+        busybox udhcpc -i tap0 -n -q -f -t 4 -T 2 -x hostname:lazy-laptop -s $UDHCPC_SCRIPT
     first=$(busybox udhcpc -i tap0 -n -q -f -t 4 -T 2 -s $UDHCPC_SCRIPT 2>/dev/null | grep -oE 'ip=[0-9.]+')
     second=$(busybox udhcpc -i tap0 -n -q -f -t 4 -T 2 -s $UDHCPC_SCRIPT 2>/dev/null | grep -oE 'ip=[0-9.]+')
     if [ -n "$first" ] && [ "$first" = "$second" ]; then
@@ -455,6 +456,91 @@ for i in range(3):
     check_output "firewall: unsolicited traffic from the WAN doesn't reach the LAN" "^nothing arrived$" cat $TMP/firewall
     wan ip route del 10.0.9.0/24 via $ROUTER_WAN
     check_ping "router still answers on its WAN address" "0%" wan ping -c 2 -i 0.2 -W 2 $ROUTER_WAN
+
+    echo "--- HTTP management API"
+    API=http://$ROUTER_LAN
+    check_output "GET / serves the page" "^200 text/html.*LazyDaysOS" sh -c \
+        "curl -s --max-time 5 -w '%{http_code} %{content_type} ' -o $TMP/index $API/ && head -c 300 $TMP/index | tr -d '\n'"
+    curl -s --max-time 5 $API/api/stats > $TMP/stats.json
+    check_output "/api/stats is valid JSON describing the router" "^consistent$" python3 - $TMP/stats.json <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+ports = {i['name']: i for i in s['interfaces']}
+clients = {c['ip']: c for c in s['clients']}
+problems = []
+if ports['eth0']['role'] != 'lan' or ports['eth0']['dhcp'] != 'server' or ports['eth0']['ipv4'] != '10.0.9.2/24':
+    problems.append('eth0 %r' % ports['eth0'])
+if ports['eth1']['role'] != 'wan' or ports['eth1']['dhcp'] != 'client' or ports['eth1']['ipv4'] != '10.0.8.2/24':
+    problems.append('eth1 %r' % ports['eth1'])
+if not any(r['network'] == '0.0.0.0/0' and r['gateway'] == '10.0.8.1' for r in s['routes']):
+    problems.append('no DHCP default route')
+if s['dhcp']['leases'] < 2:
+    problems.append('leases %d' % s['dhcp']['leases'])
+if not any(c['hostname'] == 'lazy-laptop' and c['lease_s'] for c in s['clients']):
+    problems.append('no lazy-laptop lease among clients')
+lan = clients.get('10.0.9.1')
+if not lan or lan['up_bytes'] < 1000000 or lan['down_bytes'] < 1000000 or lan['mac'] is None:
+    problems.append('client 10.0.9.1 %r' % lan)
+if s['nat']['created'] < 3 or s['nat']['firewall_dropped'] < 1 or s['ipv4']['forwarded'] < 2000:
+    problems.append('counters nat=%r ipv4=%r' % (s['nat'], s['ipv4']))
+if s['tcp']['active'] < 1 or s['system']['uptime_ms'] <= s['system']['ready_ms']:
+    problems.append('system/tcp %r %r' % (s['system'], s['tcp']))
+print('; '.join(problems) or 'consistent')
+PY
+    curl -s --max-time 5 "$API/api/events" > $TMP/events.json
+    check_output "/api/events logs leases, devices and the WAN lease" "^logged$" python3 -c "
+import json
+e = json.load(open('$TMP/events.json'))
+texts = ' | '.join(x['category'] + ': ' + x['text'] for x in e)
+need = ['dhcp: 10.0.9.1', 'lazy-laptop', 'client: new device 10.0.9.1 on eth0', 'wan: eth1 got 10.0.8.2', 'system: kernel ready']
+missing = [n for n in need if n not in texts]
+print('missing %s in %s' % (missing, texts[:300]) if missing else 'logged')"
+    last=$(python3 -c "import json; print(json.load(open('$TMP/events.json'))[-1]['id'])")
+    check_output "/api/events?since=<last id> returns nothing new" "^\[\]$" curl -s --max-time 5 "$API/api/events?since=$last"
+
+    check_ping "second LAN host reaches the WAN" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
+    check_output "POST /api/block?ip=10.0.9.3" '"blocked":true' curl -s --max-time 5 -X POST "$API/api/block?ip=10.0.9.3"
+    check_ping "blocked device can't reach the WAN" "100%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 1 $WAN_HOST
+    check_ping "other devices are unaffected" "0%" ping -c 3 -i 0.2 -W 2 $WAN_HOST
+    check_output "blocked device can still open the dashboard" "^200$" \
+        curl -s --max-time 5 --interface 10.0.9.3 -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "stats show the device as blocked" '"ip":"10.0.9.3"[^}]*"blocked":true' curl -s --max-time 5 $API/api/stats
+    check_output "POST /api/unblock?ip=10.0.9.3" '"blocked":false' curl -s --max-time 5 -X POST "$API/api/unblock?ip=10.0.9.3"
+    check_ping "unblocked device reaches the WAN again" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
+    check_output "block and unblock were logged" "unblocked 10.0.9.3" curl -s --max-time 5 "$API/api/events?since=$last"
+
+    check_output "from the WAN: 403" "^403$" wan curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://$ROUTER_WAN/
+    check_output "unknown path: 404" "^404$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/nope
+    check_output "wrong method: 405" "^405 405$" sh -c \
+        "curl -s --max-time 5 -o /dev/null -w '%{http_code} ' -X DELETE $API/api/stats; curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/block"
+    check_output "bad parameter: 400" "^400$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X POST "$API/api/block?ip=999.1.1.1"
+    check_output "raw protocol errors: 400, 431, 413" "^400 431 413$" python3 -c "
+import socket
+def ask(raw):
+    c = socket.create_connection(('$ROUTER_LAN', 80), timeout=5)
+    c.sendall(raw)
+    reply = c.recv(200).decode(errors='replace')
+    c.close()
+    return reply.split(' ')[1] if reply.startswith('HTTP/1.1 ') else repr(reply[:40])
+print(ask(b'HELLO\r\n\r\n'), ask(b'GET / HTTP/1.1\r\nX-Pad: ' + b'a' * 3000 + b'\r\n\r\n'),
+      ask(b'POST /api/block HTTP/1.1\r\nContent-Length: 1000\r\n\r\n'))"
+    check_output "incomplete request times out with 408" "^HTTP/1.1 408" python3 -c "
+import socket
+c = socket.create_connection(('$ROUTER_LAN', 80), timeout=10)
+c.sendall(b'GET / HTTP/1.1\r\n')
+print(c.recv(200).decode(errors='replace').splitlines()[0])"
+    check_output "30 parallel requests all answered" "^30 x 200$" python3 -c "
+import threading, urllib.request
+codes = []
+def get():
+    try:
+        codes.append(urllib.request.urlopen('$API/api/stats', timeout=15).status)
+    except Exception as e:
+        codes.append(repr(e))
+threads = [threading.Thread(target=get) for _ in range(30)]
+for t in threads: t.start()
+for t in threads: t.join()
+print('30 x 200' if codes.count(200) == 30 else codes)"
 }
 
 # ------------------------------------------------------------------- tcp ----

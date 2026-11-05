@@ -849,6 +849,11 @@ uint32_t tcp_remote_ip(const struct tcp_conn* c)
     return c->remote_ip;
 }
 
+uint32_t tcp_local_ip(const struct tcp_conn* c)
+{
+    return c->local_ip;
+}
+
 size_t tcp_active_connections(void)
 {
     size_t n = 0;

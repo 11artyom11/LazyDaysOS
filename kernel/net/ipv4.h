@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "netdev.h"
+#include <strbuf.h>
 
 #define IPV4_HEADER_LEN     20                  /* without options */
 #define IPV4_PAYLOAD_MAX    (1500 - IPV4_HEADER_LEN)
@@ -66,6 +67,11 @@ bool ipv4_send_dev(struct netdev* dev, uint32_t src, uint32_t dst, uint8_t proto
                    const void* payload, size_t len);
 
 void ipv4_print_config(void);
+
+/* Our port that owns address ip, or NULL */
+struct netdev* ipv4_iface_with_address(uint32_t ip);
+uint8_t ipv4_prefix_len(uint32_t mask);
+void ipv4_routes_json(struct strbuf* sb);
 
 struct ipv4_stats
 {
