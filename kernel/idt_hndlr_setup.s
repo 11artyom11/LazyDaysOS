@@ -10,9 +10,7 @@
         cli
         pushl $0
         pushl $\intno
-        movl $\intno, %edx
         jmp general_interrupt_handler
-        iret
 .endm
 
 .macro design_interrupt_with_errcode intno
@@ -21,9 +19,7 @@
     ISR\intno:
         cli
         pushl $\intno
-        movl $\intno, %edx
         jmp general_interrupt_handler
-        iret
 .endm
 
 .macro design_pic_interrupt intno picno
@@ -33,7 +29,6 @@
         cli
         pushl $0
         pushl $\intno
-        movl $\intno, %edx
         jmp general_interrupt_handler
 .endm
 
@@ -54,11 +49,11 @@ design_interrupt_with_errcode 13 #These ones are with error code GI/O
 design_interrupt_with_errcode 14 #These ones are with error code GI/O
 design_interrupt_no_errcode 15
 design_interrupt_no_errcode 16
-design_interrupt_no_errcode 17
+design_interrupt_with_errcode 17 #These ones are with error code GI/O
 design_interrupt_no_errcode 18
 design_interrupt_no_errcode 19
 design_interrupt_no_errcode 20
-design_interrupt_no_errcode 21
+design_interrupt_with_errcode 21 #These ones are with error code GI/O
 design_interrupt_no_errcode 22
 design_interrupt_no_errcode 23
 design_interrupt_no_errcode 24
@@ -66,8 +61,8 @@ design_interrupt_no_errcode 25
 design_interrupt_no_errcode 26
 design_interrupt_no_errcode 27
 design_interrupt_no_errcode 28
-design_interrupt_no_errcode 29
-design_interrupt_no_errcode 30
+design_interrupt_with_errcode 29 #These ones are with error code GI/O
+design_interrupt_with_errcode 30 #These ones are with error code GI/O
 design_interrupt_no_errcode 31
 # done with interrupts, now generate IRQ intances
 
@@ -92,14 +87,16 @@ design_pic_interrupt 47, 15
 
 
 
+/*
+    Stack layout on entry (see struct int_frame in isr.h):
+    [pusha regs][intno][errcode][eip][cs][eflags]
+    The frame pointer is passed to interrupt_handler(struct int_frame*).
+*/
 general_interrupt_handler:
     pusha
-    movl %edx, %eax
-    push %eax
+    push %esp
     call interrupt_handler
-    pop %eax
-    add $0x8, %esp
+    add $4, %esp
     popa
-    sti
+    add $8, %esp            # drop intno and errcode
     iret
-

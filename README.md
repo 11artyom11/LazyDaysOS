@@ -83,14 +83,24 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
 
    This builds `LazyDaysOS.bin`, stages it into `sysroot/`, creates `sysroot/boot/kernel/LazyDaysOS.iso` and checks that the kernel is a valid multiboot image. (Plain `make` only builds the kernel binary in the repo root; the boot scripts read from `sysroot/`.)
 
-3. **Boot using QEMU:**
+3. **Run the self tests:**
+
+   ```bash
+   make check
+   ```
+
+   This boots the kernel headless in QEMU in test mode. The kernel runs its built-in self tests (memory allocators, interrupts, timer, utilities) and reports the result back to QEMU, so the command passes or fails like a normal test suite. The kernel's serial log is printed and saved to `qemu_check.log`.
+
+4. **Boot using QEMU:**
 
    ```bash
    ./bootit.sh          # boot the kernel directly (qemu -kernel)
-   ./bootit.sh --iso    # boot the GRUB ISO; press Enter at the GRUB menu
+   ./bootit.sh --iso    # boot the GRUB ISO
    ```
 
-4. **Debug with GDB:**
+   Kernel messages appear both in the QEMU window and, through the serial port, in the terminal you started it from.
+
+5. **Debug with GDB:**
 
    ```bash
    ./debug.sh
@@ -98,13 +108,11 @@ Then add `export PATH="$HOME/opt/cross/bin:$PATH"` to your `~/.bashrc`.
 
    This opens two terminals: QEMU halted and waiting for a debugger (`./bootit.sh -d`), and GDB using `gdbconf`, which connects to `localhost:1234` and breaks at `_start`.
 
-5. **Clean:**
+6. **Clean:**
 
    ```bash
    make clean
    ```
-
-   Headers are not tracked as dependencies, so run `make clean` after editing a `.h` file.
 
 ## Contribution
 

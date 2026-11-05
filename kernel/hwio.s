@@ -20,37 +20,42 @@ inb:
     in %dx, %al
     ret
 
+/* void idt_buf_drain(uint32_t idt_ptr) */
 .global idt_buf_drain
 .type idt_buf_drain, @function
 
 idt_buf_drain:
+    mov 4(%esp), %eax
     lidt (%eax)
     ret
 
+/* void i686_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment) */
 .global i686_GDT_Load
 .type i686_GDT_Load, @function
 
 i686_GDT_Load:
-    // push %ebp
-    // mov %esp, %ebp
-    cli
-    pop %ebx
-    xor %ebx, %ebx
-    pop %eax
+    push %ebp
+    mov %esp, %ebp
+
+    mov 8(%ebp), %eax
     lgdt (%eax)
 
-    mov $0x10, %ax
+    /* Reload data segment registers with dataSegment */
+    mov 16(%ebp), %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
     mov %ax, %ss
 
-    mov $0x08, %eax
+    /* Reload CS with codeSegment via far return, then return normally */
+    movzwl 12(%ebp), %eax
     push %eax
-    movl $kernel_main, %edx
-    push %edx
-    sti
-    retf
-    // mov %ebp, %esp
-    // pop %ebp
+    push $.Lreload_cs
+    lret
+
+.Lreload_cs:
+    mov %ebp, %esp
+    pop %ebp
+    ret
+

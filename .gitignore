@@ -3,3 +3,5 @@
 isodir
 *.a
 sysroot
+*.d
+qemu_check.log

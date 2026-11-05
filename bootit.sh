@@ -1,15 +1,17 @@
-FLAGS=
+# Boot the installed kernel in QEMU. Serial output (COM1) goes to this terminal.
+#   -d     wait for gdb on localhost:1234 (see gdbconf / debug.sh)
+#   --iso  boot the GRUB ISO instead of loading the kernel directly
+FLAGS="-serial stdio"
 BINROOT="sysroot/boot/kernel"
 EXECBOOT=$BINROOT"/LazyDaysOS"
+MODE="-kernel"
+EXT=".bin"
 
-if [ "$1" = "-d" ]; then
-    FLAGS=$FLAGS"-s -S"
-fi
-if [ "$1" = "--iso" ]; then
-    FLAGS=$FLAGS" -cdrom"
-    EXECBOOT=$EXECBOOT".iso"
-else
-    FLAGS=$FLAGS" -kernel"
-    EXECBOOT=$EXECBOOT".bin"
-fi
-sudo qemu-system-i386 $FLAGS $EXECBOOT  
+for arg in "$@"; do
+    case $arg in
+        -d)    FLAGS="$FLAGS -s -S" ;;
+        --iso) MODE="-cdrom"; EXT=".iso" ;;
+    esac
+done
+
+qemu-system-i386 $FLAGS $MODE $EXECBOOT$EXT

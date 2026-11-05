@@ -18,54 +18,34 @@
 .section .bss
 .align 16
 stack_bottom:
-.skip 8000 #16KiB
+.skip 16384 #16KiB
 stack_top:
 
-	
+
 /*As the linker script specifies _start as the entry point to the kernel and the bootloader will jump to this position once the kernel has been loaded. It does'nt make sense to return from this routine, as parent called - bootloader is gone by that time*/
 
+/*
+	GRUB enters here already in 32-bit protected mode with interrupts disabled,
+	EAX = multiboot magic and EBX = physical address of the multiboot info.
+	Interrupts stay disabled until kernel_main has installed the IDT.
+*/
 .section .text
 .global _start
 .type _start, @function
 _start:
-	//0x53f000ff
-	//0x11
-	// mov   %cr0, %eax
-    // and    0xFFFFFE, %eax       //Set the Protected Mode bit
-    // mov   %eax, %cr0      //We're now in Protected Mode!
-	
-	// cli
-	// call init_gdt
+	cli
+	mov $stack_top, %esp
 
-// reloadSegments:
-//     // Reload CS register containing code selector:
-    cli
-    call i686_GDT_Initialize
-    call safe_switch_protected
-    sti
-	call kernel_main
+	/* Keep the stack 16-byte aligned at the call to kernel_main */
+	sub $8, %esp
+	push %ebx						/* multiboot info */
+	push %eax						/* multiboot magic */
+
+	call i686_GDT_Initialize
+	call kernel_main				/* kernel_main(magic, mbi) is not supposed to return */
+
 	cli
 1:	hlt
 	jmp 1b
-
-.section .text
-.type safe_switch_protected, @function
-safe_switch_protected:
-	mov   %cr0, %eax
-    or   %eax, 0x1       //Set the Protected Mode bit
-    mov   %eax, %cr0      //We're now in Protected Mode!
-    ret
-
-.section .text
-.type safe_real, @function
-safe_switch_real:
-    mov %cr0, %eax
-    mov %eax, %ebx
-    dec %ebx
-    and  %ebx, %eax
-    mov %eax, %cr0
-    ret
-
-
 
 .size _start, . - _start

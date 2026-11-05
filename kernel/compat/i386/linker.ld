@@ -2,9 +2,10 @@ ENTRY(_start)
 
 SECTIONS
 {
-	/* Begin putting sections at 2 MiB, a conventional place for kernels to be
+	/* Begin putting sections at 1 MiB, a conventional place for kernels to be
 	   loaded at by the bootloader. */
 	. = 1M;
+	_kernel_start = .;
 
 	/* First put the multiboot header, as it is required to be put very early
 	   in the image or the bootloader won't recognize the file format.
@@ -12,27 +13,30 @@ SECTIONS
 	.text BLOCK(4K) : ALIGN(4K)
 	{
 		*(.multiboot)
-		*(.text)
+		*(.text .text.*)
 	}
 
 	/* Read-only data. */
 	.rodata BLOCK(4K) : ALIGN(4K)
 	{
-		*(.rodata)
+		*(.rodata .rodata.*)
 	}
 
 	/* Read-write data (initialized) */
 	.data BLOCK(4K) : ALIGN(4K)
 	{
-		*(.data)
+		*(.data .data.*)
 	}
 
 	/* Read-write data (uninitialized) and stack */
 	.bss BLOCK(4K) : ALIGN(4K)
 	{
 		*(COMMON)
-		*(.bss)
+		*(.bss .bss.*)
 	}
+
+	/* Everything between _kernel_start and _kernel_end is reserved in the frame allocator */
+	_kernel_end = .;
 
 	/* Additional sections can be added as needed. */
 }

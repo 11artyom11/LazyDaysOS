@@ -10,12 +10,10 @@
 
 /**
  * @brief This procedure does operations necessary to enable paging mode.
- * 
+ *
  * @warning This procedure assumes that protected mode is active.
- * 
+ *
  */
 uint16_t mem$setup_paging(void);
-
-void pagefault_hander (void);
 
 #endif /* __VM_WATCHDOG__ */

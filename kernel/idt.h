@@ -3,8 +3,8 @@
 #define MAP_IRQ(irq) (irq + 0x20)
 
 
+#define TIMER_INTERRUPT MAP_IRQ(0)
 #define KBD_INTERRUPT MAP_IRQ(1)
-#define PGFLT_INTERRUPT MAP_IRQ(14)
 
 #include <stdint.h>
 #include <kio.h>

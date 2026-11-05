@@ -9,6 +9,7 @@ status=$?
 if [ $status -eq 1 ] 
 then
     echo "${RED}[ERROR]${ENDCOLOR} $1 is invalid multiboot image"
+    exit 1
 else 
     echo "${GREEN}[SUCCE]${ENDCOLOR} $1 is valid multiboot image"
 fi

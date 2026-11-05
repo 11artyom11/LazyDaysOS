@@ -1,28 +1,52 @@
 #include "kio.h"
+#include "serial.h"
 #include "idt.h"
 #include "util.h"
+#include "panic.h"
 #include <kern_powerup.h>
-#include <vm_watchdog.h>
+#include <multiboot.h>
 
-static bool boot_successful = false;
-static int mem$paging_state = MEM$PAGING_DISABLED;
-extern bool input_allowed = false;
+bool input_allowed = false;
 
-void kernel_main(void)
+void kernel_main(uint32_t magic, const multiboot_info_t* mbi)
 {
 	/* Initialize terminal interface */
 	terminal_initialize();
+	serial_initialize();
+
+	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
+		k_panic("not loaded by a multiboot bootloader");
+	}
+
 	init_idt();
 
 	/* Powerup main kernel modules */
-	/* Important note: After completion of this procedure protected mode is activated */
-	uint16_t res = powerup_kernel_i386();
-	if (KERN$PWRUP == res){
-		k_print("[K_SUCC] getting kernel ready... Done\n");
-	} else {
-		k_print("[K_FAIL] kernel failed to set up\n");
+	if (KERN$PWRUP != powerup_kernel_i386(mbi)) {
+		k_panic("kernel failed to set up");
 	}
 
-kern_exit:
-	asm("int $55"); return;
+	/* IDT, PIC and timer are ready: start taking interrupts */
+	asm volatile("sti");
+
+	size_t status = kern$self_test();
+	if (status != UTIL$SUCCESS) {
+		k_print("[K_FAIL] self tests failed, status:%d\n", status);
+		if (kern$test_mode) {
+			kern$test_exit(KERN$TEST_FAIL);
+		}
+		k_panic("self tests failed");
+	}
+	k_print("[K_SUCC] self tests passed ... Done\n");
+
+	if (kern$test_mode) {
+		kern$test_exit(KERN$TEST_PASS);
+	}
+
+	k_print("[K_SUCC] getting kernel ready... Done\n");
+	input_allowed = true;
+
+	/* Idle: everything from here on happens in interrupt handlers */
+	for (;;) {
+		asm volatile("hlt");
+	}
 }
