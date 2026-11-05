@@ -13,8 +13,9 @@
 #   static  eth1 configured statically, 192.168.50.0/24 via a static route:
 #           host behaviour, forwarding, ICMP errors, UDP
 #   home    eth1=dhcp from dnsmasq on the WAN host (which reserves 10.0.8.2 and
-#           names itself the gateway), the router serves DHCP on the LAN:
-#           real udhcpc and crafted DHCP requests against the router's server
+#           names itself the gateway), the router serves DHCP on the LAN and
+#           NATs to the WAN (nat=eth1). The WAN host has NO route back to the
+#           LAN, like the Internet: DHCP both ways, NAT, firewall
 #
 # Kernel serial output goes to qemu_<scenario>.log, traffic to qemu_<scenario>_{lan,wan}.pcap.
 
@@ -137,7 +138,9 @@ start_topology() {
     wan ip addr add $REMOTE/32 dev lo
     wan ip addr add $WAN_HOST/24 dev tap1
     wan ip link set tap1 up
-    wan ip route add 10.0.9.0/24 via $ROUTER_WAN
+    if [ "$WAN_ROUTE_BACK" != no ]; then
+        wan ip route add 10.0.9.0/24 via $ROUTER_WAN
+    fi
 
     if ! wait_for_log 'getting kernel ready' 150; then
         echo "[ERROR] kernel did not finish booting within 15 s"
@@ -270,13 +273,61 @@ except socket.timeout:
 PY
 }
 
+# On the WAN host for $2 seconds: UDP echo on 5002, TCP echo on 8080; logs each peer to $1
+wan_echo_server() {
+    wan python3 - "$1" "$2" <<'PY' &
+import socket, sys, threading, time
+log = open(sys.argv[1], 'w', buffering=1)
+def udp():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('10.0.8.1', 5002))
+    while True:
+        data, peer = s.recvfrom(2048)
+        log.write('udp %s:%d\n' % peer)
+        s.sendto(data, peer)
+def tcp_client(c):
+    while True:
+        data = c.recv(65536)
+        if not data:
+            break
+        c.sendall(data)
+    c.close()
+def tcp():
+    l = socket.socket()
+    l.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    l.bind(('10.0.8.1', 8080))
+    l.listen(4)
+    while True:
+        c, peer = l.accept()
+        log.write('tcp %s:%d\n' % peer)
+        threading.Thread(target=tcp_client, args=(c,), daemon=True).start()
+threading.Thread(target=udp, daemon=True).start()
+threading.Thread(target=tcp, daemon=True).start()
+time.sleep(float(sys.argv[2]))
+PY
+}
+
+# From the LAN host: send a UDP datagram from $1:$2 to the WAN echo server, print "reply" if it comes back
+lan_udp_roundtrip() {
+    python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+s.bind(('$1', $2))
+s.sendto(b'through the NAT', ('$WAN_HOST', 5002))
+try:
+    print('reply' if s.recv(100) == b'through the NAT' else 'garbled')
+except socket.timeout:
+    print('timeout')"
+}
+
 scenario_home() {
     # The upstream: dnsmasq on the WAN host reserves 10.0.8.2 for the router
     UDHCPC_SCRIPT=$TMP/udhcpc.sh
     printf '#!/bin/sh\n[ "$1" = bound ] && echo "bound ip=$ip subnet=$subnet router=$router dns=$dns lease=$lease"\nexit 0\n' > $UDHCPC_SCRIPT
     chmod +x $UDHCPC_SCRIPT
 
-    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600"
+    WAN_ROUTE_BACK=no
+    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600 nat=eth1"
     wan dnsmasq --no-daemon --conf-file=/dev/null --user=root --port=0 \
         --interface=tap1 --bind-interfaces --dhcp-authoritative \
         --dhcp-range=10.0.8.100,10.0.8.150,10m --dhcp-host=$ROUTER_WAN_MAC,$ROUTER_WAN \
@@ -293,7 +344,7 @@ scenario_home() {
     fi
     check_output "dnsmasq acknowledged the router" "DHCPACK\(tap1\) $ROUTER_WAN $ROUTER_WAN_MAC" cat $TMP/dnsmasq.log
     check_ping "WAN host pings the router's DHCP address" "0%" wan ping -c 3 -i 0.2 -W 2 $ROUTER_WAN
-    check_ping "default route from DHCP: LAN host reaches $REMOTE" "0%" ping -c 3 -i 0.2 -W 3 $REMOTE
+    check_ping "default route from DHCP + NAT: LAN host reaches $REMOTE" "0%" ping -c 3 -i 0.2 -W 3 $REMOTE
 
     echo "--- DHCP server on the LAN port"
     check_output "udhcpc gets a lease from the router" \
@@ -311,6 +362,95 @@ scenario_home() {
     check_output "INIT-REBOOT for a free pool address: ACK" "^ACK yiaddr=10.0.9.140$" dhcp_probe 02:00:00:00:00:01 10.0.9.140
     check_output "INIT-REBOOT for an address leased to someone else: NAK" "^NAK" dhcp_probe 02:00:00:00:00:02 10.0.9.140
     check_output "INIT-REBOOT for an address on another network: NAK" "^NAK" dhcp_probe 02:00:00:00:00:03 172.16.0.5
+
+    echo "--- NAT"
+    ip addr add 10.0.9.3/24 dev tap0                # a second LAN host
+    wan_echo_server $TMP/peers 30
+    sleep 0.5
+    check_ping "LAN host pings WAN host through the NAT" "0%" ping -c 5 -i 0.2 -W 3 $WAN_HOST
+    check_ping "forwarded burst through the NAT: 1000 pings, 1 ms apart" "0%" ping -q -c 1000 -i 0.001 -W 1 $WAN_HOST
+    check_output "UDP round trip through the NAT" "^reply$" lan_udp_roundtrip $LAN_HOST 40000
+    check_output "WAN host sees the router's address, source port preserved" "^udp $ROUTER_WAN:40000$" cat $TMP/peers
+    check_output "second LAN host, same source port: round trip works" "^reply$" lan_udp_roundtrip 10.0.9.3 40000
+    second=$(grep '^udp ' $TMP/peers | tail -1)
+    if [ -n "$second" ] && [ "$second" != "udp $ROUTER_WAN:40000" ] && echo "$second" | grep -q "^udp $ROUTER_WAN:"; then
+        pass "port collision: second LAN host got another external port ($second)"
+    else
+        fail "port collision: second mapping is '$second'"
+    fi
+    check_output "1 MiB over TCP through the NAT arrives intact" "^intact 1048576$" python3 -c "
+import socket, threading, hashlib, os
+data = os.urandom(1 << 20)
+c = socket.create_connection(('$WAN_HOST', 8080), timeout=10)
+threading.Thread(target=c.sendall, args=(data,), daemon=True).start()
+got = bytearray()
+while len(got) < len(data):
+    chunk = c.recv(65536)
+    if not chunk:
+        break
+    got += chunk
+c.close()
+print(('intact %d' if bytes(got) == data else 'corrupt %d') % len(got))"
+    check_output "TCP connection seen from the router's address" "^tcp $ROUTER_WAN:" cat $TMP/peers
+    check_output "ICMP error through the NAT: closed WAN port is reported to the LAN host" "^refused$" python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+s.connect(('$WAN_HOST', 9)); s.send(b'anyone?')
+try:
+    s.recv(100); print('answered')
+except ConnectionRefusedError:
+    print('refused')
+except socket.timeout:
+    print('timeout')"
+
+    # Filtering: after 10.0.9.1:40010 talked to WAN:5004, only WAN:5004 may answer
+    python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(3)
+s.bind(('$LAN_HOST', 40010))
+s.sendto(b'open a mapping', ('$WAN_HOST', 5004))
+got = []
+try:
+    while True:
+        got.append(s.recv(100).decode())
+except (socket.timeout, ConnectionRefusedError):
+    pass
+print(' '.join(got) or 'nothing')" > $TMP/filtered &
+    lan_listener=$!
+    sleep 0.5
+    wan python3 -c "
+import socket
+for port, text in ((6000, 'wrong-port'), (5004, 'right-port')):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('$WAN_HOST', port))
+    s.sendto(text.encode(), ('$ROUTER_WAN', 40010))"
+    wait $lan_listener
+    check_output "only the contacted remote port gets back in" "^right-port$" cat $TMP/filtered
+
+    # Firewall: give the WAN host a route to the LAN and let it try. A ping alone
+    # can't show this (a reply would come back NATed and be ignored by ping), so
+    # a LAN listener must receive nothing.
+    wan ip route add 10.0.9.0/24 via $ROUTER_WAN
+    python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+s.bind(('$LAN_HOST', 7777))
+try:
+    print('received ' + s.recv(100).decode())
+except socket.timeout:
+    print('nothing arrived')" > $TMP/firewall &
+    lan_listener=$!
+    sleep 0.3
+    wan python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+for i in range(3):
+    s.sendto(b'unsolicited', ('$LAN_HOST', 7777))"
+    wan ping -c 2 -i 0.2 -W 1 $LAN_HOST >/dev/null 2>&1
+    wait $lan_listener
+    check_output "firewall: unsolicited traffic from the WAN doesn't reach the LAN" "^nothing arrived$" cat $TMP/firewall
+    wan ip route del 10.0.9.0/24 via $ROUTER_WAN
+    check_ping "router still answers on its WAN address" "0%" wan ping -c 2 -i 0.2 -W 2 $ROUTER_WAN
 }
 
 scenario_$SCENARIO

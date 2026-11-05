@@ -3,6 +3,7 @@
 #include "arp.h"
 #include "icmp.h"
 #include "udp.h"
+#include "nat.h"
 #include <kio.h>
 
 #define IPV4_FLAG_MF        0x2000      /* more fragments */
@@ -123,6 +124,7 @@ void ipv4_clear_address(struct netdev* dev)
     }
     iface->addr = 0;
     iface->mask = 0;
+    nat_flush(dev);                     /* mappings used the old address */
     /* Connected routes went with the address; routes via gateways stay */
     for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
         if (ipv4$routes[i].used && ipv4$routes[i].dev == dev && ipv4$routes[i].gateway == 0) {
@@ -176,7 +178,9 @@ static bool ipv4$$is_martian(uint32_t addr)
     return first == 0 || first == 127 || first >= 224;
 }
 
-static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t len, size_t header_len)
+/* translated: NAT already rewrote this inbound packet toward an inside host */
+static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t len, size_t header_len,
+                          bool translated)
 {
     const struct ipv4_header* ip = (const struct ipv4_header*)packet;
     uint32_t src = net_ntohl(ip->src);
@@ -184,6 +188,11 @@ static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t 
 
     if (ipv4$$is_martian(src) || ipv4$$is_martian(dst)) {
         ipv4_stats.fwd_martian++;
+        return;
+    }
+    /* Firewall: from the outside, only replies to tracked connections get in */
+    if (nat_is_outside(ingress) && !translated) {
+        nat_stats.fw_dropped++;
         return;
     }
     if (ip->ttl <= 1) {
@@ -209,6 +218,9 @@ static void ipv4$$forward(struct netdev* ingress, const uint8_t* packet, size_t 
         copy[i] = packet[i];
     }
     struct ipv4_header* out = (struct ipv4_header*)copy;
+    if (nat_is_outside(route->dev) && !nat_outbound(route->dev, copy, len, header_len)) {
+        return;
+    }
     out->ttl--;
     out->checksum = 0;
     out->checksum = net_checksum(copy, header_len);
@@ -242,8 +254,21 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
     }
 
     uint32_t dst = net_ntohl(ip->dst);
+
+    /* Replies to NATed connections are addressed to the outside port itself */
+    if (nat_is_outside(dev) && dst == ipv4_iface_address(dev)) {
+        uint8_t copy[IPV4_HEADER_LEN + IPV4_PAYLOAD_MAX];
+        for (size_t i = 0; i < total_len; i++) {
+            copy[i] = packet[i];
+        }
+        if (nat_inbound(dev, copy, total_len, header_len)) {
+            ipv4$$forward(dev, copy, total_len, header_len, true);
+            return;
+        }
+    }
+
     if (!ipv4$$is_local(dev, dst)) {
-        ipv4$$forward(dev, packet, total_len, header_len);
+        ipv4$$forward(dev, packet, total_len, header_len, false);
         return;
     }
 

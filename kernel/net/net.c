@@ -6,6 +6,7 @@
 #include "icmp.h"
 #include "udp.h"
 #include "dhcp.h"
+#include "nat.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -46,6 +47,21 @@ uint16_t net_checksum_finish(uint32_t sum)
 uint16_t net_checksum(const void* data, size_t len)
 {
     return net_checksum_finish(net_checksum_add(0, data, len));
+}
+
+uint16_t net_checksum_replace16(uint16_t check, uint16_t old_word, uint16_t new_word)
+{
+    /* RFC 1624 eqn. 3: HC' = ~(~HC + ~m + m') */
+    uint32_t sum = (~net_ntohs(check) & 0xFFFF) + (~old_word & 0xFFFF) + new_word;
+    sum = (sum & 0xFFFF) + (sum >> 16);
+    sum = (sum & 0xFFFF) + (sum >> 16);
+    return net_htons((uint16_t)~sum);
+}
+
+uint16_t net_checksum_replace32(uint16_t check, uint32_t old_value, uint32_t new_value)
+{
+    check = net_checksum_replace16(check, old_value >> 16, new_value >> 16);
+    return net_checksum_replace16(check, old_value & 0xFFFF, new_value & 0xFFFF);
 }
 
 /* Parse a decimal number up to max; advances *text */
@@ -231,6 +247,16 @@ void net_initialize(void)
         }
     }
 
+    /* nat=ethN (repeatable): ethN is an outside (WAN) port */
+    for (size_t n = 0; cmdline_get("nat", n, value, sizeof(value)); n++) {
+        struct netdev* dev = netdev_find(value);
+        if (dev && nat_enable(dev)) {
+            k_print("[K_INFO] nat: %s is the outside port, unsolicited inbound traffic is dropped\n", value);
+        } else {
+            k_print("[K_FAIL] nat=%s: no such port (or too many outside ports)\n", value);
+        }
+    }
+
     if (cmdline_has("udp_echo") && udp_bind(UDP_PORT_ECHO, udp_echo_handler)) {
         k_print("[K_INFO] UDP echo service on port %u\n", UDP_PORT_ECHO);
     }
@@ -246,6 +272,7 @@ void net_run_once(void)
         arp_tick(now);
         dhcp_client_tick(now);
         dhcp_server_tick(now);
+        nat_tick(now);
     }
     netdev_run_once();
 }
@@ -272,6 +299,22 @@ size_t net_util_self_test(void)
     data[9] = bytes[1];
     if (net_checksum(data, 10) != 0) {
         k_print("[UTIL_FAIL] checksum does not verify\n");
+        return UTIL$FAIL;
+    }
+
+    /* Incremental update must match a full recompute after changing a 32-bit field */
+    uint8_t header[20] = {0x45, 0, 0, 84, 0x12, 0x34, 0x40, 0, 64, 1, 0, 0, 10, 0, 9, 1, 8, 8, 8, 8};
+    uint16_t check = net_checksum(header, sizeof(header));
+    header[10] = ((uint8_t*)&check)[0];
+    header[11] = ((uint8_t*)&check)[1];
+    uint32_t old_src = NET_IP(10, 0, 9, 1), new_src = NET_IP(203, 0, 113, 77);
+    uint16_t updated = net_checksum_replace32(check, old_src, new_src);
+    header[12] = 203; header[13] = 0; header[14] = 113; header[15] = 77;
+    header[10] = 0;
+    header[11] = 0;
+    uint16_t recomputed = net_checksum(header, sizeof(header));
+    if (updated != recomputed) {
+        k_print("[UTIL_FAIL] incremental checksum 0x%x, recomputed 0x%x\n", net_ntohs(updated), net_ntohs(recomputed));
         return UTIL$FAIL;
     }
 

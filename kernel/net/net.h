@@ -41,6 +41,11 @@ uint16_t net_checksum(const void* data, size_t len);
 uint32_t net_checksum_add(uint32_t sum, const void* data, size_t len);
 uint16_t net_checksum_finish(uint32_t sum);
 
+/* Update a stored checksum (as found in the header) after a 16/32-bit field
+   changed from old to new (host order values), without touching the data */
+uint16_t net_checksum_replace16(uint16_t check, uint16_t old_word, uint16_t new_word);
+uint16_t net_checksum_replace32(uint16_t check, uint32_t old_value, uint32_t new_value);
+
 /* Parse "a.b.c.d" (host order result); false on malformed input */
 bool net_parse_ip(const char* text, uint32_t* ip);
 
