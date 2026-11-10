@@ -4,6 +4,7 @@
 #include <pmm.h>
 #include <pit.h>
 #include <kio.h>
+#include "../../gdt.h"
 #include "../../heap.h"
 #include "../../hwio.h"
 #include "../../isr.h"
@@ -68,6 +69,11 @@ size_t kern$self_test(void)
 	k_print("[K_INFO] running self tests\n");
 
 	if ((status = util$self_test()) != UTIL$SUCCESS) {
+		return status;
+	}
+
+	k_print("[K_INFO] .........  Test gdt_self_test()\n");
+	if ((status = gdt_self_test()) != UTIL$SUCCESS) {
 		return status;
 	}
 

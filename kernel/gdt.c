@@ -1,5 +1,7 @@
 #include "gdt.h"
 #include <stdint.h>
+#include <stddef.h>
+#include <util.h>
 
 typedef struct
 {
@@ -66,9 +68,13 @@ typedef enum
     GDT_BASE_HIGH(base)                                             \
 }
 
-/* 
+/*
     NOTE:   Granularity bit is set -- therefore second
-            argument in GDT_ENTRY macro spans 4KiB * limit
+            argument in GDT_ENTRY macro spans 4KiB * limit,
+            and the full 20-bit limit 0xFFFFF covers all 4 GiB.
+            A smaller limit faults on MMIO near the top of the
+            address space, but only on hardware and KVM: QEMU's
+            TCG skips data segment limit checks (gdt_self_test).
     NOTE_2: It is handy to manipulate memory with 4KiB portions.
     NOTE_3: Kernel code and data segmets do overlap 1-1 intentionally
  */
@@ -78,12 +84,12 @@ static GDTEntry g_GDT[] = {
 
     // Kernel 32-bit code segment
     GDT_ENTRY(0x00000,
-              0xFFFF,
+              0xFFFFF,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE_SEGMENT | GDT_ACCESS_CODE_READABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
 
     // Kernel 32-bit data segment
     GDT_ENTRY(0x0000,
-              0xFFFF,
+              0xFFFFF,
               GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA_SEGMENT | GDT_ACCESS_DATA_WRITEABLE, GDT_FLAG_32BIT | GDT_FLAG_GRANULARITY_4K),
    
     GDT_ENTRY(0xFFFF,
@@ -103,4 +109,35 @@ void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t co
 void i686_GDT_Initialize()
 {
     i686_GDT_Load(&g_GDTDescriptor, i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT);
+}
+
+/**
+ * @brief Reads the loaded kernel segments' limits back with LSL. Device
+ *        registers live near the top of the address space (e1000 MMIO at
+ *        0xFEBxxxxx), so anything short of 4 GiB faults with #GP on hardware
+ *        and under KVM. QEMU's TCG does not check data segment limits, so only
+ *        this test catches it there.
+ *
+ * @return UTIL$SUCCESS on success
+ * @return UTIL$FAIL otherwise
+ */
+size_t gdt_self_test(void)
+{
+    static const uint16_t selectors[] = { i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT };
+
+    for (size_t i = 0; i < sizeof(selectors) / sizeof(selectors[0]); i++) {
+        uint32_t limit = 0;
+        uint32_t valid = 0;
+        asm volatile("lsl %2, %0\n\t"
+                     "setz %b1"
+                     : "+r"(limit), "+q"(valid)
+                     : "r"((uint32_t)selectors[i])
+                     : "cc");
+        if (!valid || limit != 0xFFFFFFFF) {
+            k_print("[UTIL_FAIL] segment 0x%x limit is 0x%x, expected 0xffffffff (4 GiB)\n",
+                    (uint32_t)selectors[i], limit);
+            return UTIL$FAIL;
+        }
+    }
+    return UTIL$SUCCESS;
 }
