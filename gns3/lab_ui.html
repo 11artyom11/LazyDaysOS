@@ -54,7 +54,7 @@ kbd { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border: 1
 .brand b { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
 .brand span { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .topbar .chip { padding: 4px 9px; }
-@media (max-width: 1750px) { .brand span { display: none; } .topbar .status { max-width: 220px; } }
+@media (max-width: 1750px) { .brand span, .ctl-label { display: none; } .topbar .status { max-width: 220px; } }
 .sep { width: 1px; align-self: stretch; background: var(--border); }
 .grow { flex: 1; }
 .seg { display: inline-flex; background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
@@ -246,7 +246,7 @@ th { color: var(--ink-2); font-weight: 600; font-size: 12px; position: sticky; t
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.current td { background: var(--wash); }
 .empty-row td { color: var(--muted); text-align: center; padding: 18px; }
-.rstats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.rstats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 .rstat { background: var(--page); border-radius: 8px; padding: 7px 10px; }
 .rstat .k { font-size: 12px; color: var(--ink-2); }
 .rstat .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -302,6 +302,7 @@ tr.current td { background: var(--wash); }
       <div class="tile"><div class="k"><i class="swatch" style="background:var(--s2)"></i>Offered</div><div class="v" id="k-offered">—</div></div>
       <div class="tile"><div class="k"><i class="swatch" style="background:var(--s3)"></i>Router forwards</div><div class="v" id="k-router">—</div></div>
       <div class="tile"><div class="k" id="k-third-label">Loss</div><div class="v" id="k-third">—</div></div>
+      <div class="tile"><div class="k" title="Measured by LazyDaysOS: share of the last second not asleep in hlt">Router CPU</div><div class="v" id="k-cpu">—</div></div>
       <div class="tile"><div class="k">Jitter</div><div class="v" id="k-jitter">—</div></div>
       <div class="path-note" id="path-note"></div>
     </div>
@@ -707,6 +708,7 @@ function updateKpis() {
   const r = fresh(live.recv), s = fresh(live.sent), rr = routerFresh();
   $("k-delivered").innerHTML = r ? `${fmtMbps(r.mbps)}<small>Mbit/s</small>` : "—";
   $("k-offered").innerHTML = s ? `${fmtMbps(s.mbps)}<small>Mbit/s</small>` : "—";
+  $("k-cpu").innerHTML = rr && rr.cpu_busy_pct != null ? `${Math.round(rr.cpu_busy_pct)}<small>%</small>` : "—";
   $("k-router").innerHTML = rr && running && egressPort(rr) ? `${fmtK(egressPort(rr).tx_pps)}<small>pkt/s</small>` : "—";
   if (ui.proto === "udp") {
     $("k-third-label").textContent = "Loss";
@@ -733,6 +735,9 @@ const noteHtml = (text) => `<div class="gap"><span class="muted" style="margin-r
 /* Everything the router takes in, both directions: what its per-packet ceiling applies to */
 const routerInPps = (rr) => rr ? rr.ports.reduce((a, p) => a + p.rx_pps, 0) : null;
 const routerCeiling = () => Math.max(13000, peakRouterPps * 1.05);
+/* The router's load as a fraction: measured CPU busy share (new kernels), else packets in against the best seen */
+const routerLoad = (rr) => !rr ? 0 : rr.cpu_busy_pct != null ? Math.min(1, rr.cpu_busy_pct / 100) : Math.min(1, (routerInPps(rr) || 0) / routerCeiling());
+const cpuText = (rr) => rr && rr.cpu_busy_pct != null ? `CPU ${Math.round(rr.cpu_busy_pct)}%` : null;
 function renderJourney() {
   const r = rowInfo(ui.row), s = running ? fresh(live.sent) : null, d = running ? fresh(live.recv) : null, rr = running ? routerFresh() : null;
   const down = active ? active.reverse : ui.reverse, cond = serverCond();
@@ -741,7 +746,8 @@ function renderJourney() {
   if (r && r.router) {
     // data direction only: in on the ingress port, out on the egress port (TCP ACKs travel the other way)
     const inP = ingressPort(rr), outP = egressPort(rr), rx = inP ? inP.rx_pps : null, fwd = outP ? outP.tx_pps : null;
-    html += gapHtml(s && rx != null ? s.pps - rx : 0, s && s.pps, down && cond.loss ? `lost on the link (${cond.loss}%) or at the router's input` : "dropped at the router's input: its receive ring overflows");
+    const missed = inP && inP.rx_missed_ps > 0 ? ` (the card counted ${fmtLive(inP.rx_missed_ps)}/s itself)` : "";
+    html += gapHtml(s && rx != null ? s.pps - rx : 0, s && s.pps, down && cond.loss ? `lost on the link (${cond.loss}%) or at the router's input` : `dropped at the router's input: its receive ring overflows${missed}`);
     html += stageHtml(`${esc(r.router)} receives <small class="muted">${inP ? inP.name : ""}</small>`, rx, inP && inP.rx_mbps, max, "router");
     html += gapHtml(rx != null && fwd != null ? rx - fwd : 0, rx, "not forwarded (no route, TTL, firewall)");
     html += stageHtml(`${esc(r.router)} forwards <small class="muted">${outP ? "out " + outP.name : ""}${r.row === "2" ? " · NAT" : ""}</small>`, fwd, outP && outP.tx_mbps, max, "router");
@@ -763,7 +769,8 @@ function story(r, s, d, rr) {
     out.push(`<p class="lead">No router in this path: ${fmtMbps(d.mbps)} Mbit/s is the ceiling of GNS3's emulated network itself.</p><p>Use it as the reference: anything the router paths lose compared with this is LazyDaysOS's cost.</p>`);
   } else if (dropFrac > 0.05 && inP) {
     out.push(`<p class="lead">${esc(r.router)} is saturated: it takes in about ${fmtLive(inP.rx_pps)} packets/s, but ${fmtLive(s.pps)}/s arrive.</p>`);
-    out.push(`<p>The other ${Math.round(dropFrac * 100)}% never reach the kernel: the network card's receive ring fills up because the CPU can't empty it fast enough. Everything that does get in is forwarded.</p>`);
+    const cpuPct = rr && rr.cpu_busy_pct != null ? Math.round(rr.cpu_busy_pct) : null;
+    out.push(`<p>The other ${Math.round(dropFrac * 100)}% never reach the kernel: the network card's receive ring fills up because the CPU ${cpuPct != null ? `(measured ${cpuPct}% busy) ` : ""}can't empty it fast enough. Everything that does get in is forwarded.</p>`);
     out.push(p.proto === "udp" && p.length < 512 ? `<p>Smaller packets don't help: the limit is packets per second, not bytes. At ${p.length}-byte payloads that ceiling is only ${fmtMbps(d.mbps)} Mbit/s.</p>`
       : `<p>Try <b>small packets</b>: the router's packet rate stays about the same, so throughput collapses. That is what <code>-O2</code> and fewer copies per packet should improve.</p>`);
   } else if (p.proto === "tcp") {
@@ -771,7 +778,7 @@ function story(r, s, d, rr) {
     const outP = egressPort(rr), data = outP ? outP.tx_pps : d.pps, acks = outP ? outP.rx_pps : null, total = routerInPps(rr);
     out.push(`<p class="lead">TCP matches its sending rate to what gets through: ${fmtMbps(d.mbps)} Mbit/s, about ${fmtLive(data)} data packets/s through ${esc(r.router)}.</p>`);
     if (acks != null && acks > 50) out.push(`<p>The acknowledgements cost the router packets too: ${fmtLive(acks)}/s flow back the other way, so it handles about ${fmtLive(total)} packets/s in total`
-      + (total > 0.85 * routerCeiling() ? `, at its per-packet ceiling. That is why TCP stops at ${fmtLive(data)} data packets/s here.</p>` : `.</p>`));
+      + ((rr.cpu_busy_pct != null ? rr.cpu_busy_pct >= 90 : total > 0.85 * routerCeiling()) ? `${cpuText(rr) ? ` and its ${cpuText(rr)}` : ""}, at its per-packet ceiling. That is why TCP stops at ${fmtLive(data)} data packets/s here.</p>` : `.</p>`));
     out.push(`<p>It finds the limit by overshooting now and then${ls && ls.retrans != null ? `: the ${fmtLive(ls.retrans)} retransmissions/s are the probes that got dropped` : ""}. The small grey dots flowing back are its acknowledgements.</p>`);
   } else {
     out.push(`<p class="lead">At ${fmtLive(s.pps)} packets/s ${esc(r.router)} keeps up: what is offered is delivered.</p><p>Raise the offered rate to find its ceiling, around ${sig3(Math.max(peakRouterPps, 12000))} packets/s on this build.</p>`);
@@ -874,16 +881,19 @@ function drawTopoLive() {
     const inP = ingressPort(rr), outP = egressPort(rr);
     const inM = sent && sent.mbps, inPps = sent && sent.pps, outM = outP ? outP.tx_mbps : recv && recv.mbps, outPps = outP ? outP.tx_pps : recv && recv.pps;
     if (!down) { linkPill(cli, rt, inM, inPps); linkPill(rt, srv, outM, outPps); } else { linkPill(srv, rt, inM, inPps); linkPill(rt, cli, outM, outPps); }
-    const rx = routerInPps(rr) || 0, ceiling = routerCeiling(), frac = Math.min(1, rx / ceiling), rad = topo.ringR;
+    const rx = routerInPps(rr) || 0, frac = routerLoad(rr), rad = topo.ringR;
     el("circle", { cx: rt[0], cy: rt[1], r: rad, class: "ring-track" }, g);
-    const hot = sent && inP && sent.pps > 0 && inP.rx_pps / sent.pps < 0.95;
+    const hot = (sent && inP && sent.pps > 0 && inP.rx_pps / sent.pps < 0.95) || (running && rr && rr.cpu_busy_pct != null && rr.cpu_busy_pct >= 95);
     if (frac > 0.001) {
       const a0 = -Math.PI / 2, a1 = a0 + frac * 2 * Math.PI * 0.9999;
       el("path", { d: `M${rt[0] + rad * Math.cos(a0)},${rt[1] + rad * Math.sin(a0)} A${rad},${rad} 0 ${frac > 0.5 ? 1 : 0} 1 ${rt[0] + rad * Math.cos(a1)},${rt[1] + rad * Math.sin(a1)}`, class: "ring" + (hot ? " hot" : "") }, g);
     }
     // one status line under the router's name and address: load (or saturation) and the NAT table
     const parts = [];
-    if (rr && running) parts.push(hot ? "⚠ saturated: dropping at input" : `${fmtK(rx)} pkt/s in · ${Math.round(frac * 100)}% load`);
+    const cpu = cpuText(rr);
+    if (rr && running) parts.push(hot ? (cpu ? `⚠ saturated · ${cpu}` : "⚠ saturated: dropping at input")
+                                      : [cpu, `${fmtK(rx)} pkt/s in`].filter(Boolean).join(" · "));
+    else if (cpu) parts.push(cpu);
     if (r.row === "2" && rr) parts.push(`NAT ${rr.nat.active} conn`);
     const n = nodeById(r.nodes.router), below = Math.max(n.h * topo.scale / 2, rad + 2);
     if (parts.length) el("text", { x: rt[0], y: rt[1] + below + 43, "text-anchor": "middle", class: hot ? "hotlabel" : "load-sub" }, g, parts.join(" · "));
@@ -1139,13 +1149,13 @@ function renderRouter() {
   if (!router || router.row !== ui.row) { body.innerHTML = `<p class="muted">Waiting for ${esc(r.router)}…</p>`; return; }
   if (!router.ok) { body.innerHTML = `<p class="muted">Can't read ${esc(r.router)}'s counters: ${esc(router.message || "no reply")}</p>`; return; }
   const rv = routerFresh() || router, n = rv.nat, isNat = r.row === "2", stat = (k, v) => `<div class="rstat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-  let html = `<div class="rstats">${stat(`${esc(r.router)} forwards, both ways`, fmtLive(rv.forwarded_ps) + "<small class=muted> /s</small>")}`
+  let html = `<div class="rstats">${stat("CPU busy", rv.cpu_busy_pct != null ? `${Math.round(rv.cpu_busy_pct)}<small class=muted> %</small>` : "<small class=muted>old kernel</small>")}${stat(`${esc(r.router)} forwards, both ways`, fmtLive(rv.forwarded_ps) + "<small class=muted> /s</small>")}`
     + stat("NAT connections", isNat ? fmtLive(n.active) : "—") + stat("NAT translations", isNat ? fmtLive(n.outbound_ps + n.inbound_ps) + "<small class=muted> /s</small>" : "—")
     + stat("Firewall drops", isNat ? fmtLive(n.firewall_dropped_ps) + "<small class=muted> /s</small>" : "—")
     + stat("Heap used", `${Math.round(rv.heap_used / 1024)}<small class=muted> / ${Math.round(rv.heap_size / 1024)} KiB</small>`) + `</div>`;
-  html += `<table><thead><tr><th>Port</th><th>Role</th><th>Address</th><th class="num">In pkt/s</th><th class="num">Out pkt/s</th><th class="num">In Mbit/s</th><th class="num">Out Mbit/s</th><th class="num">Dropped/s</th></tr></thead><tbody>`;
-  for (const p of rv.ports) html += `<tr><td>${p.name}</td><td>${p.role === "wan" ? "outside (NAT)" : "inside"}</td><td>${esc(p.ipv4 || "—")}</td><td class="num">${fmtLive(p.rx_pps)}</td><td class="num">${fmtLive(p.tx_pps)}</td><td class="num">${fmtMbps(p.rx_mbps)}</td><td class="num">${fmtMbps(p.tx_mbps)}</td><td class="num">${fmtLive(p.rx_dropped_ps + p.tx_dropped_ps)}</td></tr>`;
-  body.innerHTML = html + `</tbody></table><p class="hint">From <code>/api/stats</code> once a second · uptime ${Math.round(rv.uptime_s)} s. "Dropped" is what the kernel itself discards; receive-ring overflows never reach it (see the Journey tab).</p>`;
+  html += `<table><thead><tr><th>Port</th><th>Role</th><th>Address</th><th class="num">In pkt/s</th><th class="num">Out pkt/s</th><th class="num">In Mbit/s</th><th class="num">Out Mbit/s</th><th class="num">Missed by NIC/s</th><th class="num">Dropped/s</th></tr></thead><tbody>`;
+  for (const p of rv.ports) html += `<tr><td>${p.name}</td><td>${p.role === "wan" ? "outside (NAT)" : "inside"}</td><td>${esc(p.ipv4 || "—")}</td><td class="num">${fmtLive(p.rx_pps)}</td><td class="num">${fmtLive(p.tx_pps)}</td><td class="num">${fmtMbps(p.rx_mbps)}</td><td class="num">${fmtMbps(p.tx_mbps)}</td><td class="num">${p.rx_missed_ps == null ? "—" : fmtLive(p.rx_missed_ps)}</td><td class="num">${fmtLive(p.rx_dropped_ps + p.tx_dropped_ps)}</td></tr>`;
+  body.innerHTML = html + `</tbody></table><p class="hint">From <code>/api/stats</code> once a second · uptime ${Math.round(rv.uptime_s)} s. "Missed by NIC" is the network card's own count of frames it had no buffer for (on QEMU's emulated card it stays 0: QEMU pauses delivery instead, and the excess is lost before the card). "Dropped" is what the kernel itself discards.</p>`;
 }
 
 /* ---------- measurements ---------- */

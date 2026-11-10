@@ -529,7 +529,9 @@ class RouterPoller(threading.Thread):
                           "rx_mbps": rate(p["rx_bytes"], o["rx_bytes"]) * 8 / 1e6,
                           "tx_mbps": rate(p["tx_bytes"], o["tx_bytes"]) * 8 / 1e6,
                           "rx_dropped_ps": rate(p["rx_dropped"], o["rx_dropped"]),
-                          "tx_dropped_ps": rate(p["tx_dropped"], o["tx_dropped"])})
+                          "tx_dropped_ps": rate(p["tx_dropped"], o["tx_dropped"]),
+                          # dropped by the NIC itself (ring full); kernels before the cpu/rx_missed stats lack it
+                          "rx_missed_ps": rate(p["rx_missed"], o.get("rx_missed", p["rx_missed"])) if "rx_missed" in p else None})
         n, on = stats["nat"], prev[1]["nat"]
         hub.publish({
             "type": "router", "row": row, "ok": True, "name": r["router"], "ports": ports,
@@ -538,6 +540,8 @@ class RouterPoller(threading.Thread):
                     "outbound_ps": rate(n["outbound"], on["outbound"]),
                     "inbound_ps": rate(n["inbound"], on["inbound"]),
                     "firewall_dropped_ps": rate(n["firewall_dropped"], on["firewall_dropped"])},
+            # measured by the kernel: share of the last second not spent asleep in hlt
+            "cpu_busy_pct": stats["cpu"]["busy_permille"] / 10 if "cpu" in stats else None,
             "heap_used": stats["system"]["heap_used"], "heap_size": stats["system"]["heap_size"],
             "uptime_s": stats["system"]["uptime_ms"] / 1000,
         })
