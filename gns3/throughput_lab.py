@@ -19,7 +19,8 @@ import json, os, sys, urllib.request, urllib.error
 BASE = "http://127.0.0.1:3080/v2"
 IMAGE = "nicolaka/netshoot:latest"
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROJECT = "LazyDaysOS throughput"
+# LAB_PROJECT selects another copy of the lab (e.g. a dev copy next to the one in use)
+PROJECT = os.environ.get("LAB_PROJECT", "LazyDaysOS throughput")
 
 # name, y, router command line (None = no router), client side, server side, server gateway
 ROWS = [

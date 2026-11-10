@@ -366,7 +366,9 @@ def capture(link_id, seconds):
 
 
 class Runner:
-    """One iperf3 run at a time: a one-off server plus a client running until stopped."""
+    """One iperf3 run at a time: a one-off server plus a client, running until stopped or, with a
+    "duration", for that many seconds (benchmark trials). The client's final summary of each run
+    is kept in ends[run_id]."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -374,13 +376,15 @@ class Runner:
         self.params = None
         self.procs = []
         self.errored = set()
+        self.ends = {}
         self.focus_row = "1"            # whose router counters to poll when idle
 
     @staticmethod
     def args(p):
         a = ["-P", str(p["parallel"])]
         if p["proto"] == "udp":
-            a += ["-u", "-b", f"{p['bitrate']}M", "-l", str(p["length"])]
+            rate = str(int(p["bitrate_bps"])) if p.get("bitrate_bps") else f"{p['bitrate']}M"
+            a += ["-u", "-b", rate, "-l", str(p["length"])]
         elif p["bitrate"]:
             a += ["-b", f"{p['bitrate']}M"]
         if p["reverse"]:
@@ -437,15 +441,16 @@ class Runner:
             time.sleep(0.4)
             client = subprocess.Popen(
                 ["docker", "exec", r["client"], "iperf3", "-c", r["server_ip"], "-p", IPERF_PORT,
-                 "-t", "0"] + iperf + self.args(p),
+                 "-t", str(p.get("duration") or 0)] + iperf + self.args(p),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
             self.procs = [server, client]
         hub.publish({"type": "run", "run": run_id, "params": p, "filters": r["filters"],
                      "command": "iperf3 -c " + r["server_ip"] + " " + " ".join(self.args(p))})
-        for proc in (server, client):
-            threading.Thread(target=self._read, args=(proc, run_id, p), daemon=True).start()
+        for proc, role in ((server, "server"), (client, "client")):
+            threading.Thread(target=self._read, args=(proc, run_id, p, role), daemon=True).start()
+        return run_id
 
-    def _read(self, proc, run_id, p):
+    def _read(self, proc, run_id, p, role):
         for line in proc.stdout:
             if run_id != self.run_id:
                 return
@@ -457,6 +462,9 @@ class Runner:
                 if self.error(run_id, "iperf3: " + str(ev.get("data"))):
                     threading.Thread(target=self.stop, args=("error",), daemon=True).start()
                 return
+            if ev.get("event") == "end" and role == "client":
+                self.ends[run_id] = ev["data"]      # sum_sent, and sum_received as reported by the server
+                continue
             if ev.get("event") != "interval":
                 continue
             s = ev["data"]["sum"]
@@ -479,6 +487,13 @@ class Runner:
             hub.publish(sample)
         if proc.wait() not in (0, None):
             self.error(run_id, "iperf3 exited unexpectedly")
+        elif role == "client" and p.get("duration"):
+            with self.lock:                 # a timed run that ended by itself
+                finished = run_id == self.run_id
+                if finished:
+                    self.params = None
+            if finished:
+                hub.publish({"type": "stopped", "reason": "done"})
 
 
 runner = Runner()
@@ -491,6 +506,8 @@ class RouterPoller(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.prev = {}
+        self.last = {}                      # row -> latest raw /api/stats
+        self.cpu = collections.deque(maxlen=900)    # (time, row, busy %, forwarded/s)
 
     def run(self):
         while True:
@@ -515,6 +532,7 @@ class RouterPoller(threading.Thread):
         stats = json.loads(out.stdout)
         prev = self.prev.get(row)
         self.prev[row] = (now, stats)
+        self.last[row] = stats
         if not prev or stats["system"]["uptime_ms"] < prev[1]["system"]["uptime_ms"]:
             return                          # first sample, or the router rebooted
         dt = now - prev[0]
@@ -533,6 +551,8 @@ class RouterPoller(threading.Thread):
                           # dropped by the NIC itself (ring full); kernels before the cpu/rx_missed stats lack it
                           "rx_missed_ps": rate(p["rx_missed"], o.get("rx_missed", p["rx_missed"])) if "rx_missed" in p else None})
         n, on = stats["nat"], prev[1]["nat"]
+        cpu = stats["cpu"]["busy_permille"] / 10 if "cpu" in stats else None
+        self.cpu.append((now, row, cpu, rate(stats["ipv4"]["forwarded"], prev[1]["ipv4"]["forwarded"])))
         hub.publish({
             "type": "router", "row": row, "ok": True, "name": r["router"], "ports": ports,
             "forwarded_ps": rate(stats["ipv4"]["forwarded"], prev[1]["ipv4"]["forwarded"]),
@@ -541,10 +561,236 @@ class RouterPoller(threading.Thread):
                     "inbound_ps": rate(n["inbound"], on["inbound"]),
                     "firewall_dropped_ps": rate(n["firewall_dropped"], on["firewall_dropped"])},
             # measured by the kernel: share of the last second not spent asleep in hlt
-            "cpu_busy_pct": stats["cpu"]["busy_permille"] / 10 if "cpu" in stats else None,
+            "cpu_busy_pct": cpu,
             "heap_used": stats["system"]["heap_used"], "heap_size": stats["system"]["heap_size"],
             "uptime_s": stats["system"]["uptime_ms"] / 1000,
         })
+
+    def cpu_between(self, row, t0, t1):
+        """Average CPU busy % of the row's router over [t0, t1] (None without measurements)"""
+        xs = [c for t, r, c, _ in list(self.cpu) if r == row and t0 <= t <= t1 and c is not None]
+        return sum(xs) / len(xs) if xs else None
+
+
+poller = RouterPoller()
+
+
+FRAME_SIZES = (64, 128, 256, 512, 1024, 1280, 1518)    # RFC 2544 Ethernet frame sizes, FCS included
+RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KERNEL_FILE = os.path.join(REPO_DIR, "sysroot", "boot", "kernel", "LazyDaysOS.bin")
+PING_RTT = re.compile(r"= ([\d.]+)/([\d.]+)/([\d.]+)")
+
+
+def kernel_info(row):
+    """What the router is running, as far as can be told: the repo commit, the -O level, the
+    installed kernel file, and whether the router booted before that file was installed."""
+    import hashlib
+    git = lambda *a: subprocess.run(["git", "-C", REPO_DIR, *a], capture_output=True, text=True).stdout.strip()
+    info = {"git_commit": git("rev-parse", "--short", "HEAD"),
+            "git_dirty": bool(git("status", "--porcelain", "--", "kernel", "libk", "Makefile"))}
+    try:
+        with open(os.path.join(REPO_DIR, "Makefile")) as f:
+            m = re.search(r"^CFLAGS=.*?(-O\w)", f.read(), re.M)
+        info["optimization"] = m.group(1) if m else None
+    except OSError:
+        info["optimization"] = None
+    try:
+        with open(KERNEL_FILE, "rb") as f:
+            info["kernel_sha256"] = hashlib.sha256(f.read()).hexdigest()[:16]
+        info["kernel_installed"] = os.path.getmtime(KERNEL_FILE)
+    except OSError:
+        info["kernel_sha256"] = info["kernel_installed"] = None
+    stats = poller.last.get(row)
+    if stats and info["kernel_installed"]:
+        booted = time.time() - stats["system"]["uptime_ms"] / 1000
+        info["router_booted"] = booted
+        info["router_older_than_install"] = info["kernel_installed"] > booted + 2
+    return info
+
+
+class Benchmark:
+    """RFC 2544-style throughput test, adapted to emulation: for each frame size, the highest
+    UDP packet rate through the path with loss at or below a tolerance (binary search to 2%),
+    the router's CPU load at that rate, and latency under that load (ping alongside a
+    confirmation trial). One benchmark at a time; it takes over the runner. Results are saved
+    as JSON in gns3/results/, tagged with the kernel build."""
+
+    PRECISION = 0.02
+    MAX_TRIALS = 10
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.thread = None
+        self.cancelled = threading.Event()
+        self.status = None
+
+    @property
+    def running(self):
+        return self.thread is not None and self.thread.is_alive()
+
+    def start(self, cfg):
+        with self.lock:
+            if self.running:
+                raise ValueError("a benchmark is already running")
+            self.cancelled.clear()
+            self.thread = threading.Thread(target=self._run, args=(cfg,), daemon=True)
+            self.thread.start()
+
+    def stop(self):
+        if self.running:
+            self.cancelled.set()
+            runner.stop("benchmark stopped")
+
+    def _publish(self, phase, **kw):
+        self.status = {"phase": phase, **kw}
+        hub.publish({"type": "bench", **self.status})
+
+    @staticmethod
+    def _ping(r, count, interval):
+        out = docker_exec(r["client"], "ping", "-q", "-i", str(interval), "-c", str(count), "-W", "1",
+                          r["server_ip"], timeout=count * interval + 10).stdout
+        m = PING_RTT.search(out)
+        return {"min_ms": float(m.group(1)), "avg_ms": float(m.group(2)), "max_ms": float(m.group(3))} if m else None
+
+    def _trial(self, cfg, r, size, pps, ping=False):
+        payload = size - 46                 # Ethernet 14 + FCS 4 + IPv4 20 + UDP 8
+        secs = cfg["trial_s"]
+        params = {"row": cfg["row"], "proto": "udp", "parallel": 1, "bitrate": 0, "bitrate_bps": pps * payload * 8,
+                  "length": payload, "reverse": False, "interval": 0.5, "duration": secs,
+                  "bench": f"{size} B @ {int(pps):,} pkt/s"}
+        t0 = time.time()
+        run_id = runner.start(params)
+        procs = list(runner.procs)
+        rtt = self._ping(r, count=int(secs * 50), interval=0.02) if ping else None
+        for proc in procs:
+            proc.wait(timeout=secs + 20)
+        t1 = time.time()
+        end = runner.ends.pop(run_id, None)
+        if self.cancelled.is_set():
+            raise InterruptedError
+        if not end or "sum_sent" not in end or "sum_received" not in end:
+            raise RuntimeError(f"no result from the {size}-byte trial at {int(pps)} pkt/s")
+        sent, recv = end["sum_sent"], end["sum_received"]
+        duration = sent["seconds"] or secs
+        sent_pps = sent["packets"] / duration
+        trial = {"target_pps": round(pps), "sent_pps": round(sent_pps),
+                 "delivered_pps": round((recv["packets"] - recv["lost_packets"]) / duration),
+                 "loss_pct": round(recv["lost_percent"], 3), "cpu_pct": cpu if (cpu := poller.cpu_between(cfg["row"], t0 + 1.0, t1)) is None else round(cpu, 1),
+                 "sender_limited": sent_pps < 0.95 * pps}
+        trial["pass"] = trial["loss_pct"] <= cfg["loss_pct"]
+        if rtt:
+            trial["rtt"] = rtt
+        return trial
+
+    def _run(self, cfg):
+        row, r = cfg["row"], lab.rows[cfg["row"]]
+        runner.stop("benchmark")
+        runner.focus_row = row
+        started = time.time()
+        result = {"version": 1, "created": time.strftime("%Y-%m-%dT%H:%M:%S"), "label": cfg["label"],
+                  "path": r["name"], "row": row, "router": r["router"], "cmdline": r["cmdline"],
+                  "settings": {k: cfg[k] for k in ("sizes", "trial_s", "loss_pct", "max_pps")} | {"precision": self.PRECISION},
+                  "results": []}
+        try:
+            time.sleep(2.5)                 # let the poller see the router before reading its uptime
+            result["kernel"] = kernel_info(row) if r["router"] else None
+            self._publish("idle-latency", row=row, label=cfg["label"])
+            result["idle_rtt"] = self._ping(r, count=40, interval=0.05)
+            for i, size in enumerate(cfg["sizes"]):
+                hi = min(cfg["max_pps"], 1e9 / ((size + 20) * 8))     # gigabit line rate, preamble + gap included
+                lo, best, trials = 0.0, None, []
+
+                def run_trial(pps):
+                    t = self._trial(cfg, r, size, pps)
+                    trials.append(t)
+                    self._publish("trial", row=row, label=cfg["label"], size=size, index=i, of=len(cfg["sizes"]),
+                                  trial=t, trials=len(trials), done=result["results"])
+                    return t
+
+                t = run_trial(hi)
+                if t["pass"]:
+                    best = t                # limited by the maximum (or the sender), not the path
+                else:
+                    hi = min(hi, max(t["delivered_pps"] * 1.05, 100))
+                    while hi - lo > max(self.PRECISION * hi, 25) and len(trials) < self.MAX_TRIALS:
+                        mid = (lo + hi) / 2
+                        t = run_trial(mid)
+                        if t["pass"]:
+                            lo, best = mid, t
+                        else:
+                            hi = mid
+                entry = {"frame": size, "payload": size - 46, "trials": trials, "confirms": []}
+                # Emulation is noisy: the rate must pass again (with ping measuring latency alongside);
+                # if it doesn't, step down 5% and confirm again, up to three times
+                rate, confirmed = best["target_pps"] if best else 0, None
+                for _ in range(3 if best else 0):
+                    c = self._trial(cfg, r, size, rate, ping=True)
+                    entry["confirms"].append(c)
+                    self._publish("confirm", row=row, label=cfg["label"], size=size, index=i, of=len(cfg["sizes"]),
+                                  trial=c, trials=len(trials), done=result["results"])
+                    if c["pass"]:
+                        confirmed = c
+                        break
+                    rate = rate * 0.95
+                if confirmed:
+                    entry.update({"throughput_pps": confirmed["target_pps"], "delivered_pps": confirmed["delivered_pps"],
+                                  "throughput_mbps": round(confirmed["target_pps"] * size * 8 / 1e6, 3),
+                                  "loss_pct": confirmed["loss_pct"], "cpu_pct": confirmed["cpu_pct"], "rtt": confirmed.get("rtt"),
+                                  "sender_limited": confirmed["sender_limited"],
+                                  "limited_by_max": best is trials[0] and confirmed["target_pps"] == trials[0]["target_pps"]})
+                else:
+                    entry.update({"throughput_pps": 0, "throughput_mbps": 0, "unconfirmed": bool(best)})
+                result["results"].append(entry)
+                self._publish("size-done", row=row, label=cfg["label"], size=size, index=i, of=len(cfg["sizes"]),
+                              done=result["results"])
+            result["duration_s"] = round(time.time() - started)
+            os.makedirs(RESULTS_DIR, exist_ok=True)
+            commit = (result.get("kernel") or {}).get("git_commit") or "nogit"
+            name = f"{time.strftime('%Y%m%d-%H%M%S')}-{r['name'].lower()}-{commit}.json"
+            with open(os.path.join(RESULTS_DIR, name), "w") as f:
+                json.dump(result, f, indent=1)
+            self._publish("done", row=row, label=cfg["label"], file=name, done=result["results"])
+        except InterruptedError:
+            self._publish("stopped", row=row, label=cfg["label"], done=result["results"])
+        except Exception as e:  # report, never crash the server
+            runner.stop("benchmark error")
+            self._publish("error", row=row, label=cfg["label"], message=str(e), done=result["results"])
+
+
+bench = Benchmark()
+
+
+def parse_bench(body):
+    row = str(body.get("row", "1"))
+    if row not in lab.rows:
+        raise ValueError("unknown path")
+    sizes = sorted({int(x) for x in body.get("sizes", FRAME_SIZES)})
+    if not sizes or any(x not in FRAME_SIZES for x in sizes):
+        raise ValueError(f"frame sizes must be among {FRAME_SIZES}")
+    trial_s, loss_pct, max_pps = int(body.get("trial_s", 3)), float(body.get("loss_pct", 0.1)), int(body.get("max_pps", 50000))
+    if not (1 <= trial_s <= 30 and 0 <= loss_pct <= 5 and 100 <= max_pps <= 1000000):
+        raise ValueError("benchmark setting out of range")
+    label = str(body.get("label", "")).strip()[:60] or f"{PATH_NAMES[row]} benchmark"
+    return {"row": row, "sizes": sizes, "trial_s": trial_s, "loss_pct": loss_pct, "max_pps": max_pps, "label": label}
+
+
+def bench_results():
+    """Saved benchmark runs, newest first, without the per-trial detail"""
+    out = []
+    if os.path.isdir(RESULTS_DIR):
+        for name in sorted(os.listdir(RESULTS_DIR), reverse=True):
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(RESULTS_DIR, name)) as f:
+                    d = json.load(f)
+            except (OSError, ValueError):
+                continue
+            out.append({"file": name, "label": d.get("label"), "created": d.get("created"), "path": d.get("path"),
+                        "kernel": d.get("kernel"), "settings": d.get("settings"), "idle_rtt": d.get("idle_rtt"),
+                        "results": [{k: v for k, v in e.items() if k != "trials"} for e in d.get("results", [])]})
+    return out
 
 
 def parse_params(body):
@@ -605,7 +851,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def state(self):
         return {"project": PROJECT, "rows": lab.rows, "active": runner.params,
-                "topology": lab.topology, "focus": runner.focus_row, "intervals": INTERVALS}
+                "topology": lab.topology, "focus": runner.focus_row, "intervals": INTERVALS,
+                "bench": {"running": bench.running, "status": bench.status, "sizes": FRAME_SIZES}}
 
     def events(self):
         self.send_response(200)
@@ -649,6 +896,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, ctype="image/svg+xml", body=symbol_cache[symbol], cache=True)
         if url.path == "/api/events":
             return self.events()
+        if url.path == "/api/bench/results":
+            return self.reply(200, bench_results())
+        if url.path == "/api/bench/result":
+            name = urllib.parse.parse_qs(url.query).get("file", [""])[0]
+            path = os.path.join(RESULTS_DIR, name)
+            if not re.match(r"^[\w.-]+\.json$", name) or not os.path.exists(path):
+                return self.reply(404, {"error": "no such result"})
+            with open(path, "rb") as f:
+                return self.reply(200, ctype="application/json", body=f.read())
         if url.path == "/api/console/stream":
             return self.console_stream(urllib.parse.parse_qs(url.query).get("id", [""])[0])
         if url.path == "/api/capture/file":
@@ -712,10 +968,19 @@ class Handler(BaseHTTPRequestHandler):
             if not lab.rows:
                 lab.discover()
             if self.path == "/api/run":
+                if bench.running:
+                    raise ValueError("a benchmark is running: stop it first")
                 runner.start(parse_params(body))
                 return self.reply(200, self.state())
             if self.path == "/api/stop":
+                bench.stop()
                 runner.stop()
+                return self.reply(200, self.state())
+            if self.path == "/api/bench/start":
+                bench.start(parse_bench(body))
+                return self.reply(200, self.state())
+            if self.path == "/api/bench/stop":
+                bench.stop()
                 return self.reply(200, self.state())
             if self.path == "/api/focus":
                 row = str(body.get("row"))
@@ -798,7 +1063,7 @@ def main():
         runner.cleanup_all()
     except Exception as e:  # the page shows the problem and offers to start the lab
         print(f"warning: {e}")
-    RouterPoller().start()
+    poller.start()
     signal.signal(signal.SIGTERM, interrupted)      # kill: stop the run like Ctrl+C does
     print(f"LazyDaysOS throughput lab: http://localhost:{PORT}")
     try:

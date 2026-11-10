@@ -13,7 +13,7 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --raised: #ffffff; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
   --accent: #2a78d6; --accent-ink: #ffffff; --wash: rgba(42, 120, 214, 0.08); --wash-2: rgba(42, 120, 214, 0.16);
   --critical: #d03b3b; --serious: #ec835a; --good: #0ca30c;
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.06); --float: 0 6px 24px rgba(11, 11, 11, 0.10); --track: #ecebe6;
@@ -24,7 +24,7 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --raised: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --accent: #3987e5;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --accent: #3987e5;
     --wash: rgba(57, 135, 229, 0.12); --wash-2: rgba(57, 135, 229, 0.24);
     --shadow: none; --float: 0 6px 24px rgba(0, 0, 0, 0.5); --track: #2c2c2a; --term-bg: #121211; --term-fg: #e6e5e1;
   }
@@ -33,7 +33,7 @@
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --raised: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --accent: #3987e5;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --accent: #3987e5;
   --wash: rgba(57, 135, 229, 0.12); --wash-2: rgba(57, 135, 229, 0.24);
   --shadow: none; --float: 0 6px 24px rgba(0, 0, 0, 0.5); --track: #2c2c2a; --term-bg: #121211; --term-fg: #e6e5e1;
 }
@@ -250,6 +250,22 @@ tr.current td { background: var(--wash); }
 .rstat { background: var(--page); border-radius: 8px; padding: 7px 10px; }
 .rstat .k { font-size: 12px; color: var(--ink-2); }
 .rstat .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bench { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 18px; height: 100%; }
+.bench-cfg { overflow: auto; padding-right: 4px; }
+.bench-main { display: grid; grid-template-rows: minmax(150px, 1fr) auto; gap: 8px; min-height: 0; min-width: 0; }
+.bench-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-height: 0; }
+.bench-runs { overflow: auto; max-height: 150px; }
+.bench-runs tr { cursor: pointer; }
+.bench-runs tr:hover td { background: var(--wash); }
+.text-input { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; background: var(--raised); }
+.b-progress { font-size: 12.5px; margin-top: 10px; color: var(--ink-2); }
+.b-progress .bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; margin: 6px 0; }
+.b-progress .bar i { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
+.trial-list { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.55; margin-top: 6px; max-height: 130px; overflow: auto; }
+.ok { color: var(--good); } .bad { color: var(--critical); }
+.chart .run-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.chart .run-line.live { stroke-dasharray: 5 4; }
+@media (max-width: 1100px) { .bench, .bench-charts { grid-template-columns: minmax(0, 1fr); } .bench-main { grid-template-rows: auto auto; } }
 
 /* help */
 .help { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: none; z-index: 20; align-items: center; justify-content: center; }
@@ -364,6 +380,7 @@ tr.current td { background: var(--wash); }
       <button data-t="charts" aria-selected="true">Charts</button>
       <button data-t="router">Router counters</button>
       <button data-t="table">Measurements<span class="count" id="table-count"></span></button>
+      <button data-t="bench">Benchmark<span class="count" id="bench-count"></span></button>
     </div>
     <div class="right">
       <div class="seg small" id="window"><button data-v="30">30 s</button><button data-v="60">1 min</button><button data-v="120">2 min</button><button data-v="300">5 min</button></div>
@@ -384,6 +401,31 @@ tr.current td { background: var(--wash); }
       </div>
     </div>
     <div id="d-router"></div>
+    <div id="d-bench">
+      <div class="bench">
+        <div class="bench-cfg">
+          <div class="label">Path <b id="b-path"></b></div>
+          <div class="field"><input type="text" id="b-label" class="text-input" maxlength="60" placeholder="Label, e.g. -O0 baseline"></div>
+          <div class="field"><div class="label">Frame sizes (bytes, Ethernet incl. FCS)</div><div class="chips" id="b-sizes"></div></div>
+          <div class="field" style="display:flex;gap:14px;flex-wrap:wrap">
+            <div><div class="label">Trial</div><div class="seg small" id="b-trial"><button data-v="2">2 s</button><button data-v="3">3 s</button><button data-v="5">5 s</button></div></div>
+            <div><div class="label">Loss tolerance</div><div class="seg small" id="b-loss"><button data-v="0">0</button><button data-v="0.1">0.1 %</button><button data-v="1">1 %</button></div></div>
+          </div>
+          <button class="run" id="b-go">Run benchmark</button>
+          <div class="b-progress" id="b-progress"></div>
+        </div>
+        <div class="bench-main">
+          <div class="bench-charts">
+            <div class="chart-box"><div class="head"><b>Loss-free packets/s</b><span class="muted">by frame size</span></div><div class="chart" id="b-chart-pps"><svg></svg><div class="tip"></div></div></div>
+            <div class="chart-box"><div class="head"><b>Loss-free Mbit/s</b><span class="muted">Ethernet frames</span></div><div class="chart" id="b-chart-mbps"><svg></svg><div class="tip"></div></div></div>
+          </div>
+          <div class="bench-runs"><table>
+            <thead><tr><th></th><th>Run</th><th>Path</th><th>Build</th><th>Date</th><th class="num" id="b-size-heads">pkt/s by frame size</th><th class="num">CPU</th><th class="num">RTT</th></tr></thead>
+            <tbody id="b-runs"><tr class="empty-row"><td colspan="8">No saved runs yet: results land in gns3/results/.</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
     <div id="d-table">
       <table>
         <thead><tr><th>#</th><th>Path</th><th>Traffic</th><th>Conditions</th><th class="num">Time</th><th class="num">Delivered Mbit/s</th>
@@ -481,11 +523,12 @@ function showTab(name) {
 $("itabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showTab(b.dataset.t); });
 function showDrawer(name) {
   for (const b of $("dtabs").querySelectorAll("button")) b.setAttribute("aria-selected", String(b.dataset.t === name));
-  for (const t of ["charts", "router", "table"]) $("d-" + t).classList.toggle("show", t === name);
+  for (const t of ["charts", "router", "table", "bench"]) $("d-" + t).classList.toggle("show", t === name);
+  if (name === "bench" && drawerSize < 2) setDrawer(2);
   $("window").style.display = name === "charts" ? "" : "none";
   $("csv").style.display = $("clear").style.display = name === "table" ? "" : "none";
-  if ($("drawer").classList.contains("collapsed")) setDrawer(1);
-  drawCharts();
+  if ($("drawer").classList.contains("collapsed")) setDrawer(name === "bench" ? 2 : 1);
+  drawCharts(); renderBench();
 }
 $("dtabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showDrawer(b.dataset.t); });
 const DRAWER_SIZES = [0, 300, 460];
@@ -647,7 +690,10 @@ const portOf = (r, egress) => r ? r.ports.find((p) => p.name === (!!(active && a
 const ingressPort = (r) => portOf(r, false), egressPort = (r) => portOf(r, true);
 
 function setStatus(kind, text) { $("status").className = "status " + kind; $("status-text").textContent = text; $("status").title = text; }
-function statusText() { return running && active ? `${PATHS[active.row]} · ${trafficText(active)} · ${condText(serverCond())}` : lab ? "Idle" : "Lab not reachable"; }
+function statusText() {
+  const b = benchState.running && benchState.status;
+  if (b) return `Benchmark · ${PATHS[b.row]}` + (b.size ? ` · ${b.size} B · trial ${b.trials}` : " · starting");
+  return running && active ? `${PATHS[active.row]} · ${trafficText(active)} · ${condText(serverCond())}` : lab ? "Idle" : "Lab not reachable"; }
 function newSegment(ts, p, cond, label) {
   const last = segments[segments.length - 1];
   if (last && last.end == null) last.end = ts;
@@ -664,13 +710,14 @@ function handle(ev) {
                         length: active.length, reverse: active.reverse, interval: active.interval || ui.interval });
     if (rowInfo(active.row)) lab.rows[active.row].filters = ev.filters || {};
     live.sent = live.recv = null;           // a new run starts its averages fresh
-    newSegment(ev.ts, active, filtersToCond(ev.filters), `${PATHS[active.row]} · ${trafficText(active)}`);
+    newSegment(ev.ts, active, filtersToCond(ev.filters), active.bench ? `bench · ${active.bench}` : `${PATHS[active.row]} · ${trafficText(active)}`);
     setStatus("live", statusText()); syncControls(); drawTopo();
   } else if (ev.type === "stopped") {
     running = false; active = null;
     const last = segments[segments.length - 1];
     if (last && last.end == null) last.end = ev.ts;
-    setStatus(ev.reason === "error" ? "err" : "", ev.reason === "error" ? "Stopped after an error" : "Idle");
+    if (benchState.running) setStatus("live", statusText());
+    else setStatus(ev.reason === "error" ? "err" : "", ev.reason === "error" ? "Stopped after an error" : "Idle");
     syncControls(); renderTable(); drawTopo();
   } else if (ev.type === "conditions") {
     if (lab && lab.topology) { const l = linkById(ev.link_id); if (l) l.filters = ev.filters; }
@@ -696,6 +743,8 @@ function handle(ev) {
       peakRouterPps = Math.max(peakRouterPps, ev.forwarded_ps);
     } else if (ev.row === ui.row) router = ev;
     renderRouter();
+  } else if (ev.type === "bench") {
+    handleBench(ev);
   } else if (ev.type === "node") {
     refreshState();
   } else if (ev.type === "error") {
@@ -1173,7 +1222,7 @@ function renderTable() {
     const html = [];
     for (let i = segments.length - 1; i >= 0; i--) {
       const seg = segments[i], cur = seg.end == null && running;
-      if (!cur && !samples.some((s) => s.seg === seg.id)) continue;
+      if (seg.params.bench || (!cur && !samples.some((s) => s.seg === seg.id))) continue;   // benchmark trials have their own tab
       const st = segStats(seg);
       html.push(`<tr class="${cur ? "current" : ""}"><td>${seg.id}</td><td>${PATHS[seg.params.row]}</td><td>${trafficText(seg.params)}</td><td>${condText(seg.cond)}</td><td class="num">${Math.round(st.secs)} s</td>
         <td class="num">${fmtMbps(st.delivered)}</td><td class="num">${fmtMbps(st.offered)}</td><td class="num">${st.est && st.pps != null ? "≈" : ""}${fmtInt(st.pps)}</td><td class="num">${fmtInt(st.router)}</td>
@@ -1306,6 +1355,153 @@ setInterval(() => {
   if (selection && selection.kind === "link") renderInspect(false);
 }, 250);
 
+/* ---------- benchmark (RFC 2544-style, run by lab_ui.py) ---------- */
+const FRAME_SIZES = [64, 128, 256, 512, 1024, 1280, 1518];
+const RUN_COLORS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"];
+const benchCfg = { sizes: new Set(FRAME_SIZES), trial_s: 3, loss_pct: 0.1 };
+let benchState = { running: false, status: null };
+let benchRuns = [];                  // saved runs (summaries), newest first
+const benchPicked = [];              // files overlaid on the charts, in pick order (order = colour)
+let benchTrials = [];                // trials of the size being measured
+
+$("b-sizes").innerHTML = FRAME_SIZES.map((x) => `<button class="chip" data-v="${x}">${x}</button>`).join("");
+$("b-sizes").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const v = Number(b.dataset.v);
+  if (benchCfg.sizes.has(v)) { if (benchCfg.sizes.size > 1) benchCfg.sizes.delete(v); } else benchCfg.sizes.add(v);
+  renderBench();
+});
+wireSeg("b-trial", (v) => { benchCfg.trial_s = Number(v); renderBench(); });
+wireSeg("b-loss", (v) => { benchCfg.loss_pct = Number(v); renderBench(); });
+$("b-go").addEventListener("click", async () => {
+  try {
+    if (benchState.running) await api("/api/bench/stop", {});
+    else await api("/api/bench/start", { row: ui.row, sizes: [...benchCfg.sizes], trial_s: benchCfg.trial_s,
+                                          loss_pct: benchCfg.loss_pct, label: $("b-label").value });
+  } catch (e) { toast(e.message); }
+});
+
+function handleBench(ev) {
+  const prev = benchState.status;
+  benchState = { running: !["done", "stopped", "error"].includes(ev.phase), status: ev };
+  if (!prev || prev.size !== ev.size || ev.phase === "idle-latency") benchTrials = [];
+  if ((ev.phase === "trial" || ev.phase === "confirm") && ev.trial) benchTrials.push({ ...ev.trial, confirm: ev.phase === "confirm" });
+  if (ev.phase === "done") loadBenchRuns(ev.file);
+  if (ev.phase === "error") toast("Benchmark: " + ev.message);
+  setStatus(benchState.running ? "live" : ev.phase === "error" ? "err" : "", statusText());
+  renderBench();
+}
+async function loadBenchRuns(pick) {
+  try { benchRuns = await api("/api/bench/results"); } catch (e) { return; }
+  for (let i = benchPicked.length - 1; i >= 0; i--) if (!benchRuns.some((r) => r.file === benchPicked[i])) benchPicked.splice(i, 1);
+  if (pick && !benchPicked.includes(pick)) { if (benchPicked.length === 4) benchPicked.shift(); benchPicked.unshift(pick); }
+  if (!benchPicked.length && benchRuns.length) benchPicked.push(benchRuns[0].file);
+  renderBench();
+}
+function buildText(k) {
+  if (!k) return "no router";
+  return `${esc(k.git_commit || "?")}${k.git_dirty ? "+" : ""} · ${esc(k.optimization || "?")}` +
+    (k.router_older_than_install ? ` <span class="bad" title="The router booted before this kernel was installed: it may have run an older build">⚠ stale</span>` : "");
+}
+function renderBench() {
+  const r = rowInfo(ui.row), st = benchState.status, run = benchState.running;
+  $("b-path").textContent = r ? `${r.name}${r.router ? " · " + r.router : ""} (change in the top bar)` : "";
+  for (const b of $("b-sizes").querySelectorAll("button")) b.setAttribute("aria-pressed", String(benchCfg.sizes.has(Number(b.dataset.v))));
+  setSeg("b-trial", benchCfg.trial_s); setSeg("b-loss", benchCfg.loss_pct);
+  $("b-go").textContent = run ? "Stop benchmark" : "Run benchmark";
+  $("b-go").classList.toggle("stop", run);
+  $("b-go").disabled = !lab || !lab.topology;
+  $("bench-count").textContent = benchRuns.length || "";
+  // progress
+  let html = "";
+  const estimate = Math.round(benchCfg.sizes.size * 9 * (benchCfg.trial_s + 1.6) / 60);
+  if (!st || (!run && st.phase !== "done" && st.phase !== "error" && st.phase !== "stopped")) {
+    html = `About ${estimate} min for ${benchCfg.sizes.size} frame size${benchCfg.sizes.size > 1 ? "s" : ""}: one trial at full rate, a binary search to 2%, then a confirmation with ping measuring latency. Other traffic on this host skews results.`;
+  } else if (run) {
+    const frac = st.of ? (st.index + (st.phase === "size-done" ? 1 : 0.5)) / st.of : 0;
+    html = `<b>${st.phase === "idle-latency" ? "Measuring idle latency…" : `${st.size} B frames · size ${st.index + 1} of ${st.of}`}</b>
+      <div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>`;
+  } else {
+    html = st.phase === "done" ? `<b class="ok">Done</b> · saved <code>gns3/results/${esc(st.file)}</code>`
+      : st.phase === "stopped" ? `<b>Stopped</b> · nothing saved` : `<b class="bad">Error</b> · ${esc(st.message || "")}`;
+  }
+  if (benchTrials.length && st && st.size) {
+    html += `<div class="trial-list">` + benchTrials.map((t) => `${t.confirm ? "confirm" : "trial  "} ${String(t.target_pps.toLocaleString()).padStart(7)} pkt/s → ` +
+      `<span class="${t.pass ? "ok" : "bad"}">${t.loss_pct.toFixed(2)}% ${t.pass ? "✓" : "✗"}</span>` +
+      (t.cpu_pct != null ? ` · CPU ${Math.round(t.cpu_pct)}%` : "") + (t.rtt ? ` · RTT ${t.rtt.avg_ms.toFixed(1)} ms` : "") +
+      (t.sender_limited ? " · sender-limited" : "")).join("<br>") + `</div>`;
+  }
+  $("b-progress").innerHTML = html;
+  // saved runs table
+  $("b-size-heads").textContent = "pkt/s by frame size: " + FRAME_SIZES.join(" · ");
+  $("b-runs").innerHTML = benchRuns.length ? benchRuns.map((x) => {
+    const i = benchPicked.indexOf(x.file), small = (x.results || []).find((e) => e.frame === 64) || (x.results || [])[0];
+    const bySize = FRAME_SIZES.map((f) => { const e = (x.results || []).find((q) => q.frame === f); return e ? (e.throughput_pps ? sig3(e.throughput_pps) : "0") : "·"; }).join(" · ");
+    return `<tr data-file="${esc(x.file)}"><td><input type="checkbox" ${i >= 0 ? "checked" : ""} aria-label="Show on the charts"> ${i >= 0 ? `<i class="swatch" style="background:${RUN_COLORS[i]}"></i>` : ""}</td>
+      <td>${esc(x.label || x.file)}</td><td>${esc(x.path || "")}</td><td>${buildText(x.kernel)}</td><td>${esc((x.created || "").replace("T", " ").slice(0, 16))}</td>
+      <td class="num">${bySize}</td><td class="num">${small && small.cpu_pct != null ? Math.round(small.cpu_pct) + "%" : "—"}</td>
+      <td class="num">${small && small.rtt ? small.rtt.avg_ms.toFixed(1) + " ms" : "—"}</td></tr>`;
+  }).join("") : `<tr class="empty-row"><td colspan="8">No saved runs yet: results land in gns3/results/.</td></tr>`;
+  drawBenchCharts();
+}
+$("b-runs").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-file]"); if (!tr) return;
+  const f = tr.dataset.file, i = benchPicked.indexOf(f);
+  if (i >= 0) benchPicked.splice(i, 1); else { if (benchPicked.length === 4) benchPicked.shift(); benchPicked.push(f); }
+  renderBench();
+});
+function benchSeries() {
+  const out = benchPicked.map((f, i) => ({ run: benchRuns.find((r) => r.file === f), color: RUN_COLORS[i], live: false })).filter((x) => x.run)
+    .map((x) => ({ ...x, label: x.run.label || x.run.file, results: x.run.results || [] }));
+  const st = benchState.status;
+  if (benchState.running && st && st.done && st.done.length) out.push({ label: "running", color: "var(--ink-2)", live: true, results: st.done });
+  return out;
+}
+const bench = { pps: { box: $("b-chart-pps"), key: "throughput_pps", fmt: fmtInt, unit: "pkt/s" },
+                mbps: { box: $("b-chart-mbps"), key: "throughput_mbps", fmt: fmtMbps, unit: "Mbit/s" } };
+function drawBenchChart(c) {
+  const svg = c.box.querySelector("svg"), W = c.box.clientWidth, H = c.box.clientHeight;
+  if (!W || !H || !c.box.offsetParent) return;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.replaceChildren();
+  const series = benchSeries(), m = { l: 56, r: 16, t: 14, b: 22 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  let max = 0;
+  for (const s of series) for (const e of s.results) if (e[c.key]) max = Math.max(max, e[c.key]);
+  const sc = niceScale(max * 1.1), x = (i) => m.l + (i + 0.5) / FRAME_SIZES.length * pw, y = (v) => m.t + ph - v / sc.max * ph;
+  for (let v = 0; v <= sc.max + 1e-9; v += sc.step) {
+    el("line", { x1: m.l, x2: m.l + pw, y1: y(v), y2: y(v), class: v ? "gridline" : "baseline" }, svg);
+    el("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, svg, v.toLocaleString(undefined, { minimumFractionDigits: sc.decimals, maximumFractionDigits: sc.decimals }));
+  }
+  FRAME_SIZES.forEach((f, i) => el("text", { x: x(i), y: H - 4, "text-anchor": "middle", class: "tick" }, svg, f + " B"));
+  if (!series.length) { el("text", { x: m.l + pw / 2, y: m.t + ph / 2, "text-anchor": "middle", class: "empty" }, svg, "Run a benchmark, or tick saved runs below"); return; }
+  c.points = [];
+  for (const s of series) {
+    const pts = s.results.filter((e) => e[c.key] != null).map((e) => ({ i: FRAME_SIZES.indexOf(e.frame), e })).filter((p) => p.i >= 0).sort((a, b) => a.i - b.i);
+    if (!pts.length) continue;
+    el("path", { d: pts.map((p, k) => `${k ? "L" : "M"}${x(p.i).toFixed(1)},${y(p.e[c.key]).toFixed(1)}`).join(""), class: "run-line" + (s.live ? " live" : ""), stroke: s.color }, svg);
+    for (const p of pts) {
+      el("circle", { cx: x(p.i), cy: y(p.e[c.key]), r: 4.5, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+      c.points.push({ i: p.i, s, e: p.e });
+    }
+  }
+  if (c.hover != null) {
+    const i = Math.max(0, Math.min(FRAME_SIZES.length - 1, Math.round((c.hover - m.l) / pw * FRAME_SIZES.length - 0.5)));
+    const here = c.points.filter((p) => p.i === i), tip = c.box.querySelector(".tip");
+    if (!here.length) { tip.style.display = "none"; return; }
+    el("line", { x1: x(i), x2: x(i), y1: m.t, y2: m.t + ph, class: "cross" }, svg);
+    tip.innerHTML = `<div class="t">${FRAME_SIZES[i]}-byte frames</div>` + here.map((p) => `<div class="r"><span><i class="swatch" style="background:${p.s.color}"></i>${esc(p.s.label)}</span><b>${c.fmt(p.e[c.key])} ${c.unit}` +
+      `${p.e.cpu_pct != null ? ` <span class="muted" style="font-weight:500">CPU ${Math.round(p.e.cpu_pct)}%</span>` : ""}${p.e.rtt ? ` <span class="muted" style="font-weight:500">RTT ${p.e.rtt.avg_ms.toFixed(1)} ms</span>` : ""}</b></div>`).join("");
+    tip.style.display = "block";
+    const tw = tip.offsetWidth;
+    tip.style.left = `${x(i) + 14 + tw > W ? x(i) - tw - 14 : x(i) + 14}px`; tip.style.top = "4px";
+  }
+}
+function drawBenchCharts() { drawBenchChart(bench.pps); drawBenchChart(bench.mbps); }
+for (const c of [bench.pps, bench.mbps]) {
+  c.box.addEventListener("pointermove", (e) => { c.hover = e.clientX - c.box.getBoundingClientRect().left; drawBenchChart(c); });
+  c.box.addEventListener("pointerleave", () => { c.hover = null; c.box.querySelector(".tip").style.display = "none"; drawBenchChart(c); });
+}
+new ResizeObserver(drawBenchCharts).observe($("drawer"));
+
 /* ---------- start-up ---------- */
 function afterState() {
   $("banner").classList.toggle("show", !lab);
@@ -1340,6 +1536,8 @@ async function init() {
   setSeg("window", windowSecs); setSeg("smooth", smoothTau); setDrawer(1); showDrawer("charts"); syncControls(); renderInspect(true);
   try { lab = await api("/api/state"); } catch (e) { lab = null; $("banner-text").textContent = e.message; setStatus("err", "Lab not reachable"); }
   afterState();
+  if (lab && lab.bench) { benchState = { running: lab.bench.running, status: lab.bench.status }; }
+  loadBenchRuns();
   const es = new EventSource("/api/events");
   es.onmessage = (m) => handle(JSON.parse(m.data));
   es.onerror = () => { if (!running) setStatus("err", "Reconnecting to lab_ui.py…"); };
