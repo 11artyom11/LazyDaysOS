@@ -1,0 +1,1342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Throughput Lab</title>
+<script>window.__errors = []; addEventListener("error", (e) => window.__errors.push(String(e.message)));</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --raised: #ffffff; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --accent: #2a78d6; --accent-ink: #ffffff; --wash: rgba(42, 120, 214, 0.08); --wash-2: rgba(42, 120, 214, 0.16);
+  --critical: #d03b3b; --serious: #ec835a; --good: #0ca30c;
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.06); --float: 0 6px 24px rgba(11, 11, 11, 0.10); --track: #ecebe6;
+  --term-bg: #fcfcfb; --term-fg: #1f1f1d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --raised: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --accent: #3987e5;
+    --wash: rgba(57, 135, 229, 0.12); --wash-2: rgba(57, 135, 229, 0.24);
+    --shadow: none; --float: 0 6px 24px rgba(0, 0, 0, 0.5); --track: #2c2c2a; --term-bg: #121211; --term-fg: #e6e5e1;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --raised: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --accent: #3987e5;
+  --wash: rgba(57, 135, 229, 0.12); --wash-2: rgba(57, 135, 229, 0.24);
+  --shadow: none; --float: 0 6px 24px rgba(0, 0, 0, 0.5); --track: #2c2c2a; --term-bg: #121211; --term-fg: #e6e5e1;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; overflow: hidden; }
+button, input { font: inherit; color: inherit; }
+code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+.muted { color: var(--muted); }
+kbd { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 5px; background: var(--raised); color: var(--ink-2); }
+
+/* ---------- top bar ---------- */
+.topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-wrap: wrap; min-width: 0; }
+.brand { display: flex; flex-direction: column; margin-right: 6px; }
+.brand b { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+.brand span { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.topbar .chip { padding: 4px 9px; }
+@media (max-width: 1750px) { .brand span { display: none; } .topbar .status { max-width: 220px; } }
+.sep { width: 1px; align-self: stretch; background: var(--border); }
+.grow { flex: 1; }
+.seg { display: inline-flex; background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--ink-2); font-size: 13px; white-space: nowrap; }
+.seg button:hover { background: var(--wash); color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
+.seg.small button { padding: 3px 8px; font-size: 12px; }
+.seg.full { display: flex; } .seg.full button { flex: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: var(--raised); border-radius: 999px; padding: 4px 11px; cursor: pointer; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.chip:hover { border-color: var(--accent); color: var(--ink); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--wash-2); color: var(--ink); }
+.run { border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 650; cursor: pointer; background: var(--accent); color: var(--accent-ink); white-space: nowrap; }
+.run.stop { background: var(--critical); }
+.run:disabled { opacity: 0.5; cursor: default; }
+.icon-btn { border: 1px solid var(--border); background: var(--raised); border-radius: 8px; padding: 5px 9px; cursor: pointer; color: var(--ink-2); font-size: 13px; white-space: nowrap; }
+.icon-btn:hover { border-color: var(--accent); color: var(--ink); }
+.ctl-label { font-size: 12px; color: var(--muted); margin-right: -6px; }
+.status { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; background: var(--page);
+  border: 1px solid var(--border); font-size: 12.5px; color: var(--ink-2); max-width: 300px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.status.live .dot { background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
+.status.err .dot { background: var(--critical); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+/* ---------- workspace ---------- */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 420px; min-height: 0; }
+.stage { position: relative; min-height: 0; overflow: hidden; }
+.stage svg, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.stage canvas { pointer-events: none; }
+.overlay { position: absolute; z-index: 3; }
+.hud { top: 12px; left: 12px; right: 12px; display: flex; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+.hud .tile { pointer-events: auto; background: color-mix(in srgb, var(--raised) 92%, transparent); backdrop-filter: blur(6px);
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; box-shadow: var(--shadow); min-width: 118px; }
+.hud .k { font-size: 11.5px; color: var(--ink-2); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.hud .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hud .v small { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-left: 3px; letter-spacing: 0; }
+.hud .tile.big .v { font-size: 28px; }
+.hud .path-note { margin-left: auto; align-self: flex-start; pointer-events: auto; font-size: 12px; color: var(--muted);
+  background: color-mix(in srgb, var(--raised) 85%, transparent); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 320px; }
+.dock { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 24px);
+  background: color-mix(in srgb, var(--raised) 92%, transparent); backdrop-filter: blur(6px); border: 1px solid var(--border);
+  border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
+.dock .lbl { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.dock .cond-now { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.legend-ov { right: 12px; bottom: 12px; display: flex; gap: 12px; align-items: center; font-size: 11.5px; color: var(--ink-2); flex-wrap: wrap;
+  background: color-mix(in srgb, var(--raised) 85%, transparent); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; justify-content: flex-end; }
+.legend-ov span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.dotkey { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.xkey { color: var(--critical); font-weight: 700; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.banner { left: 50%; top: 84px; transform: translateX(-50%); background: var(--raised); border: 1px solid var(--border); border-left: 3px solid var(--critical);
+  border-radius: 10px; padding: 12px 14px; box-shadow: var(--float); display: none; max-width: 520px; }
+.banner.show { display: block; }
+.banner p { margin: 0 0 10px; }
+
+/* topology svg */
+.topo .band { fill: transparent; stroke: transparent; cursor: pointer; }
+.topo .band:hover { fill: var(--wash); }
+.topo .band.active { fill: var(--wash); stroke: var(--accent); stroke-width: 1.5; }
+.topo .rowlabel { fill: var(--ink-2); font-size: 12px; font-weight: 600; pointer-events: none; }
+.topo .rowlabel.active { fill: var(--ink); }
+.topo .link { stroke: var(--axis); stroke-width: 2; pointer-events: none; }
+.topo .link.active { stroke: var(--ink-2); }
+.topo .link.selected { stroke: var(--accent); stroke-width: 3.5; }
+.topo .link-hit { stroke: transparent; stroke-width: 18; cursor: pointer; }
+.topo .link-hit:hover + .link, .topo .link-hover { stroke: var(--accent); }
+.topo .node { cursor: pointer; }
+.topo .node .hit { fill: transparent; stroke: transparent; rx: 10; }
+.topo .node:hover .hit { fill: var(--wash); }
+.topo .node.selected .hit { fill: var(--wash-2); stroke: var(--accent); stroke-width: 1.5; }
+.topo .node-name { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
+.topo .node-ip { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.topo .port { fill: var(--muted); font-size: 10.5px; pointer-events: none; }
+.topo .dim { opacity: 0.38; }
+.topo .pill { pointer-events: none; }
+.topo .pill rect { fill: var(--raised); stroke: var(--border); }
+.topo .pill text { fill: var(--ink); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.topo .pill .sub { fill: var(--muted); font-weight: 500; font-size: 10.5px; }
+.topo .cond rect { stroke: var(--serious); }
+.topo .cond text { fill: var(--ink-2); font-weight: 500; font-size: 11px; }
+.topo .badge rect { stroke: var(--s3); }
+.topo .badge text { fill: var(--ink-2); font-weight: 500; font-size: 11px; }
+.topo .ring-track { fill: none; stroke: var(--track); stroke-width: 5; pointer-events: none; }
+.topo .ring { fill: none; stroke: var(--s3); stroke-width: 5; stroke-linecap: round; pointer-events: none; }
+.topo .ring.hot { stroke: var(--serious); }
+.topo .load { fill: var(--ink); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; pointer-events: none; }
+.topo .load-sub { fill: var(--muted); font-size: 10.5px; pointer-events: none; }
+.topo .hotlabel { fill: var(--ink); font-size: 11px; font-weight: 650; pointer-events: none; }
+.topo .load, .topo .load-sub, .topo .hotlabel, .topo .port, .topo .node-name, .topo .node-ip, .topo .rowlabel {
+  paint-order: stroke; stroke: var(--page); stroke-width: 4px; stroke-linejoin: round; }
+
+/* ---------- inspector ---------- */
+.inspector { border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tabs { display: flex; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--border); flex: none; }
+.tabs button { border: 0; background: transparent; padding: 7px 12px 9px; cursor: pointer; color: var(--ink-2); font-size: 13px; font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .count { font-weight: 500; color: var(--muted); margin-left: 4px; }
+.panel { display: none; overflow: auto; padding: 14px 16px 18px; min-height: 0; flex: 1; }
+.panel.show { display: block; }
+.panel.flex.show { display: flex; flex-direction: column; }
+.sec { margin-bottom: 16px; }
+.sec:last-child { margin-bottom: 0; }
+.sec-title { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); margin: 0 0 8px; }
+.field { margin-bottom: 12px; }
+.label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); margin-bottom: 5px; }
+.label b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 5px; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+input[type=range]:disabled { opacity: 0.4; }
+.err-line { color: var(--critical); font-size: 12.5px; margin-top: 8px; min-height: 1em; }
+.stage-row .top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.stage-row .top .name { color: var(--ink-2); }
+.stage-row .top b { font-variant-numeric: tabular-nums; font-weight: 650; }
+.stage-row .top small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.stage-row .bar { height: 10px; background: var(--track); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.stage-row .bar i { display: block; height: 100%; background: var(--s1); border-radius: 4px; transition: width 0.4s ease; }
+.stage-row .bar i.sent { background: var(--s2); } .stage-row .bar i.router { background: var(--s3); }
+.gap { font-size: 12px; color: var(--ink-2); padding: 3px 0 5px 14px; position: relative; min-height: 8px; }
+.gap::before { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; border-left: 1px dashed var(--axis); }
+.gap .x { color: var(--critical); font-weight: 700; margin-right: 4px; }
+.story { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.story p { margin: 0 0 8px; font-size: 13.5px; }
+.story .lead { font-weight: 600; }
+.story code { background: var(--page); padding: 1px 4px; border-radius: 4px; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: 13px; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.sel-head { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.sel-head img { width: 44px; height: 44px; }
+.sel-head .title { font-size: 16px; font-weight: 650; }
+.sel-head .sub { font-size: 12.5px; color: var(--muted); }
+.pill-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
+.pill-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.pill-status.on i { background: var(--good); }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.term-wrap { position: relative; flex: 1; min-height: 260px; border: 1px solid var(--border); border-radius: 8px; background: var(--term-bg); overflow: hidden; display: flex; flex-direction: column; }
+.term { flex: 1; min-height: 0; padding: 6px; }
+.term-bar { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--ink-2); background: var(--surface); }
+.term-bar .grow { flex: 1; }
+.term-empty { margin: auto; text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
+.fallback-term { flex: 1; overflow: auto; margin: 0; padding: 8px; color: var(--term-fg); white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.fallback-input { border: 0; border-top: 1px solid var(--border); padding: 6px 8px; background: transparent; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; outline: none; }
+.packets { max-height: 280px; overflow: auto; background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin: 8px 0 0;
+  font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre; }
+.packets .nat { color: var(--s3); font-weight: 700; }
+.empty-sel { color: var(--muted); font-size: 13.5px; padding: 30px 6px; text-align: center; }
+.empty-sel b { color: var(--ink-2); }
+
+/* ---------- drawer ---------- */
+.drawer { border-top: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; height: var(--drawer-h, 300px); min-height: 0; }
+.drawer.collapsed { height: auto; }
+.drawer.collapsed .drawer-body { display: none; }
+.drawer-head { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--border); flex: none; }
+.drawer-head .tabs { border-bottom: 0; padding: 6px 0 0; }
+.drawer-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+.drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 16px 14px; }
+.drawer-body > div { display: none; height: 100%; }
+.drawer-body > div.show { display: block; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; height: 100%; }
+.chart-box { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.chart-box .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; }
+.chart-box .head b { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--ink-2); align-items: center; flex-wrap: wrap; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+.chart { position: relative; flex: 1; min-height: 150px; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .baseline { stroke: var(--axis); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .line.raw { stroke-width: 1.25; opacity: 0.28; }
+.chart .marker { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .marker-label { fill: var(--ink-2); font-size: 11px; }
+.chart .endlabel { fill: var(--ink-2); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart .cross { stroke: var(--ink-2); stroke-width: 1; }
+.chart .empty { fill: var(--muted); font-size: 13px; }
+.tip { position: absolute; pointer-events: none; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-size: 12.5px; box-shadow: var(--float); white-space: nowrap; display: none; z-index: 2; }
+.tip .t { color: var(--muted); margin-bottom: 4px; }
+.tip .r { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.tip .r span:first-child { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); }
+.tip .r b { font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.current td { background: var(--wash); }
+.empty-row td { color: var(--muted); text-align: center; padding: 18px; }
+.rstats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.rstat { background: var(--page); border-radius: 8px; padding: 7px 10px; }
+.rstat .k { font-size: 12px; color: var(--ink-2); }
+.rstat .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* help */
+.help { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: none; z-index: 20; align-items: center; justify-content: center; }
+.help.show { display: flex; }
+.help .card { background: var(--raised); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; box-shadow: var(--float); width: min(520px, calc(100% - 32px)); }
+.help h3 { margin: 0 0 10px; font-size: 15px; }
+.help table td { border: 0; padding: 4px 8px 4px 0; white-space: normal; }
+
+/* ---------- small screens: scroll instead of one screen ---------- */
+@media (max-width: 1100px) {
+  body { display: block; height: auto; overflow: auto; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 620px; }
+  .inspector { border-left: 0; border-top: 1px solid var(--border); }
+  .panel { max-height: none; }
+  .drawer { height: auto; }
+  .drawer-body > div.show { height: auto; }
+  .charts { grid-template-columns: minmax(0, 1fr); }
+  .chart { height: 220px; flex: none; }
+  .rstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) { .stage { height: 520px; } .hud .tile { min-width: 0; } .hud .v { font-size: 18px; } .hud .tile.big .v { font-size: 20px; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><b>LazyDaysOS lab</b><span>live throughput · GNS3</span></div>
+  <div class="seg" id="path" title="Path (keys 1, 2, 3)"><button data-v="0">Baseline</button><button data-v="1">Routed</button><button data-v="2">NAT</button></div>
+  <div class="sep"></div>
+  <div class="chips" id="traffic-presets">
+    <button class="chip" data-p="tcp">tcp</button><button class="chip" data-p="tcp4">tcp ×4</button><button class="chip" data-p="rev">download</button>
+    <button class="chip" data-p="udp100">udp 100M</button><button class="chip" data-p="udp500">udp 500M</button><button class="chip" data-p="small">small packets</button>
+  </div>
+  <button class="run" id="go" title="Start / stop (Space)">Start</button>
+  <div class="grow"></div>
+  <span class="ctl-label" title="How often iperf3 reports">Sample</span>
+  <div class="seg small" id="interval"><button data-v="1">1 s</button><button data-v="0.5">0.5 s</button><button data-v="0.2">0.2 s</button><button data-v="0.1">0.1 s</button></div>
+  <span class="ctl-label" title="Moving average over the live numbers and chart lines; the table and CSV stay raw">Smooth</span>
+  <div class="seg small" id="smooth" title="Moving average over the live numbers and chart lines; the table and CSV stay raw"><button data-v="0">Off</button><button data-v="1">1 s</button><button data-v="3">3 s</button></div>
+  <div class="status" id="status"><span class="dot"></span><span id="status-text">Connecting…</span></div>
+  <button class="icon-btn" id="fullscreen" title="Full screen (F)">⛶</button>
+  <button class="icon-btn" id="help-btn" title="Keyboard shortcuts (?)">?</button>
+</header>
+
+<div class="workspace">
+  <section class="stage topo" id="stage">
+    <svg id="topo-svg"></svg><canvas id="topo-canvas"></canvas>
+    <div class="overlay hud">
+      <div class="tile big"><div class="k"><i class="swatch" style="background:var(--s1)"></i>Delivered</div><div class="v" id="k-delivered">—</div></div>
+      <div class="tile"><div class="k"><i class="swatch" style="background:var(--s2)"></i>Offered</div><div class="v" id="k-offered">—</div></div>
+      <div class="tile"><div class="k"><i class="swatch" style="background:var(--s3)"></i>Router forwards</div><div class="v" id="k-router">—</div></div>
+      <div class="tile"><div class="k" id="k-third-label">Loss</div><div class="v" id="k-third">—</div></div>
+      <div class="tile"><div class="k">Jitter</div><div class="v" id="k-jitter">—</div></div>
+      <div class="path-note" id="path-note"></div>
+    </div>
+    <div class="overlay dock">
+      <span class="lbl">Link to server:</span>
+      <span class="cond-now" id="cond-now">clean</span>
+      <div class="chips" id="cond-presets">
+        <button class="chip" data-c="clean">clean</button><button class="chip" data-c="home">home</button>
+        <button class="chip" data-c="far">long haul</button><button class="chip" data-c="lossy">lossy</button>
+      </div>
+      <button class="icon-btn" id="cond-adjust">Adjust…</button>
+    </div>
+    <div class="overlay legend-ov">
+      <span><i class="dotkey" style="background:var(--s1)"></i>packet</span>
+      <span><i class="dotkey" style="background:var(--s3)"></i>after NAT</span>
+      <span><i class="dotkey" style="background:var(--muted);width:6px;height:6px"></i>TCP ack</span>
+      <span><span class="xkey">×</span>dropped</span>
+      <button class="icon-btn" id="anim-toggle" title="Pause animation (P)">Pause</button>
+    </div>
+    <div class="overlay banner" id="banner"><p id="banner-text">The GNS3 lab is not reachable.</p><button class="run" id="start-lab">Start the lab</button></div>
+  </section>
+
+  <aside class="inspector">
+    <div class="tabs" role="tablist" id="itabs">
+      <button data-t="journey" aria-selected="true">Journey</button>
+      <button data-t="traffic">Traffic</button>
+      <button data-t="inspect">Inspect<span class="count" id="inspect-name"></span></button>
+    </div>
+    <div class="panel show" id="p-journey">
+      <div class="sec-title">Packets per second at each step</div>
+      <div id="stages"></div>
+      <div class="story" id="story"></div>
+    </div>
+    <div class="panel" id="p-traffic">
+      <div class="sec">
+        <div class="field"><div class="seg full" id="proto"><button data-v="tcp">TCP</button><button data-v="udp">UDP</button></div></div>
+        <div class="field">
+          <div class="seg full" id="dir"><button data-v="up">Upload →</button><button data-v="down">← Download</button></div>
+          <div class="hint">Upload: client → server. Download: server → client (through the NAT inbound).</div>
+        </div>
+        <div class="field"><div class="label">Parallel streams <b id="parallel-v"></b></div><input type="range" id="parallel" min="1" max="8" step="1"></div>
+        <div class="field"><div class="label">Offered rate <b id="bitrate-v"></b></div><input type="range" id="bitrate" min="0" step="1"></div>
+        <div class="field"><div class="label">UDP payload <b id="length-v"></b></div><input type="range" id="length" min="0" step="1"><div class="hint" id="length-hint"></div></div>
+        <div class="hint">Changes apply to a running test within half a second.</div>
+        <div class="err-line" id="run-error"></div>
+      </div>
+      <div class="sec">
+        <div class="sec-title">Command</div>
+        <code id="cmd-preview" style="display:block;background:var(--page);padding:8px;border-radius:8px;overflow-wrap:anywhere"></code>
+      </div>
+    </div>
+    <div class="panel flex" id="p-inspect"><div id="inspect-body" style="display:flex;flex-direction:column;flex:1;min-height:0"></div></div>
+  </aside>
+</div>
+
+<section class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="tabs" id="dtabs">
+      <button data-t="charts" aria-selected="true">Charts</button>
+      <button data-t="router">Router counters</button>
+      <button data-t="table">Measurements<span class="count" id="table-count"></span></button>
+    </div>
+    <div class="right">
+      <div class="seg small" id="window"><button data-v="30">30 s</button><button data-v="60">1 min</button><button data-v="120">2 min</button><button data-v="300">5 min</button></div>
+      <button class="icon-btn" id="csv">Export CSV</button>
+      <button class="icon-btn" id="clear">Clear</button>
+      <button class="icon-btn" id="drawer-size" title="Resize (D)">▴</button>
+    </div>
+  </div>
+  <div class="drawer-body">
+    <div class="show" id="d-charts">
+      <div class="charts">
+        <div class="chart-box"><div class="head"><b>Throughput</b><span class="muted">Mbit/s at both ends</span>
+          <div class="legend"><span><i class="swatch" style="background:var(--s1)"></i>Delivered</span><span><i class="swatch" style="background:var(--s2)"></i>Offered</span></div></div>
+          <div class="chart" id="chart-tp"><svg></svg><div class="tip"></div></div></div>
+        <div class="chart-box"><div class="head"><b>Packets per second</b><span class="muted" id="pps-note"></span>
+          <div class="legend"><span><i class="swatch" style="background:var(--s1)"></i>Delivered</span><span><i class="swatch" style="background:var(--s2)"></i>Offered</span><span><i class="swatch" style="background:var(--s3)"></i>Router</span></div></div>
+          <div class="chart" id="chart-pps"><svg></svg><div class="tip"></div></div></div>
+      </div>
+    </div>
+    <div id="d-router"></div>
+    <div id="d-table">
+      <table>
+        <thead><tr><th>#</th><th>Path</th><th>Traffic</th><th>Conditions</th><th class="num">Time</th><th class="num">Delivered Mbit/s</th>
+          <th class="num">Offered Mbit/s</th><th class="num">Packets/s</th><th class="num">Router fwd/s</th><th class="num">Loss %</th><th class="num">Retrans/s</th></tr></thead>
+        <tbody id="rows"><tr class="empty-row"><td colspan="11">Start a run: each change you make becomes a row here.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="help" id="help"><div class="card">
+  <h3>Keyboard shortcuts</h3>
+  <table>
+    <tr><td><kbd>Space</kbd></td><td>Start / stop the test</td></tr>
+    <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Baseline / Routed / NAT path</td></tr>
+    <tr><td><kbd>T</kbd> <kbd>U</kbd></td><td>TCP / UDP</td></tr>
+    <tr><td><kbd>J</kbd> <kbd>K</kbd> <kbd>I</kbd></td><td>Journey / Traffic / Inspect tab</td></tr>
+    <tr><td><kbd>D</kbd></td><td>Resize the bottom drawer</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Pause the packet animation</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Full screen</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Clear the selection, close this</td></tr>
+  </table>
+  <p class="muted" style="margin:10px 0 0;font-size:12.5px">Click any node for its details and a console, any link for its rates, conditions and a packet capture.
+    Shortcuts are off while you type in a console.</p>
+</div></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const BITRATES = [1, 2, 5, 10, 20, 50, 100, 150, 200, 300, 500, 750, 1000, 2000];
+const LENGTHS = [16, 32, 64, 128, 256, 512, 768, 1024, 1280, 1448];
+const PATHS = { "0": "Baseline", "1": "Routed", "2": "NAT" };
+const TRAFFIC_PRESETS = {
+  tcp: { proto: "tcp", parallel: 1, bitrate: 0, reverse: false }, tcp4: { proto: "tcp", parallel: 4, bitrate: 0, reverse: false },
+  rev: { proto: "tcp", parallel: 1, bitrate: 0, reverse: true },
+  udp100: { proto: "udp", parallel: 1, bitrate: 100, length: 1448, reverse: false },
+  udp500: { proto: "udp", parallel: 1, bitrate: 500, length: 1448, reverse: false },
+  small: { proto: "udp", parallel: 1, bitrate: 20, length: 64, reverse: false },
+};
+const COND_PRESETS = {
+  clean: { delay: 0, jitter: 0, loss: 0, corrupt: 0 }, home: { delay: 10, jitter: 2, loss: 1, corrupt: 0 },
+  far: { delay: 50, jitter: 5, loss: 0, corrupt: 0 }, lossy: { delay: 0, jitter: 0, loss: 10, corrupt: 0 },
+};
+
+const ui = { row: "1", proto: "tcp", reverse: false, parallel: 1, bitrate: 0, length: 1448, interval: 0.2 };
+let lab = null, running = false, active = null, windowSecs = 60;
+let animate = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+let selection = null;              // {kind: "node"|"link", id}
+const samples = [], segments = [];
+let router = null, peakRouterPps = 0;
+
+/* ---------- helpers ---------- */
+const fmtMbps = (v) => v == null ? "—" : v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+const fmtInt = (v) => v == null ? "—" : Math.round(v).toLocaleString();
+const fmtK = (v) => v == null ? "—" : v >= 10000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toLocaleString();
+const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function filtersToCond(f) { f = f || {}; return { delay: (f.delay || [0])[0] || 0, jitter: (f.delay || [0, 0])[1] || 0, loss: (f.packet_loss || [0])[0] || 0, corrupt: (f.corrupt || [0])[0] || 0 }; }
+function condText(c) {
+  const parts = [];
+  if (c.delay || c.jitter) parts.push(`+${c.delay * 2} ms RTT` + (c.jitter ? ` ±${c.jitter}` : ""));
+  if (c.loss) parts.push(`${c.loss}% loss`);
+  if (c.corrupt) parts.push(`${c.corrupt}% corrupt`);
+  return parts.length ? parts.join(", ") : "clean";
+}
+function trafficText(p) {
+  if (!p) return "";
+  let t = p.proto.toUpperCase();
+  if (p.proto === "udp") t += ` ${p.bitrate}M ${p.length}B`; else if (p.bitrate) t += ` ≤${p.bitrate}M`;
+  if (p.parallel > 1) t += ` ×${p.parallel}`;
+  if (p.reverse) t += " down";
+  return t;
+}
+const rowInfo = (row) => lab && lab.rows && lab.rows[row];
+const cmdIp = (cmd, port) => { const m = cmd && cmd.match(new RegExp(port + "=([0-9.]+)/")); return m ? m[1] : null; };
+const serverCond = () => filtersToCond(rowInfo(ui.row) && rowInfo(ui.row).filters);
+const nodeById = (id) => lab && lab.topology && lab.topology.nodes.find((n) => n.id === id);
+const linkById = (id) => lab && lab.topology && lab.topology.links.find((l) => l.id === id);
+const rowOfNode = (id) => lab && Object.values(lab.rows).find((r) => Object.values(r.nodes).includes(id));
+function linkName(l) { const a = nodeById(l.a), b = nodeById(l.b); return `${a ? a.name : "?"} ⇄ ${b ? b.name : "?"}`; }
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  for (const b of $("itabs").querySelectorAll("button")) b.setAttribute("aria-selected", String(b.dataset.t === name));
+  for (const t of ["journey", "traffic", "inspect"]) $("p-" + t).classList.toggle("show", t === name);
+  if (name === "inspect") fitTerm();
+}
+$("itabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showTab(b.dataset.t); });
+function showDrawer(name) {
+  for (const b of $("dtabs").querySelectorAll("button")) b.setAttribute("aria-selected", String(b.dataset.t === name));
+  for (const t of ["charts", "router", "table"]) $("d-" + t).classList.toggle("show", t === name);
+  $("window").style.display = name === "charts" ? "" : "none";
+  $("csv").style.display = $("clear").style.display = name === "table" ? "" : "none";
+  if ($("drawer").classList.contains("collapsed")) setDrawer(1);
+  drawCharts();
+}
+$("dtabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showDrawer(b.dataset.t); });
+const DRAWER_SIZES = [0, 300, 460];
+let drawerSize = 1;
+function setDrawer(i) {
+  drawerSize = i;
+  const d = $("drawer");
+  d.classList.toggle("collapsed", i === 0);
+  if (i) d.style.setProperty("--drawer-h", DRAWER_SIZES[i] + "px");
+  $("drawer-size").textContent = i === 2 ? "▾" : i === 0 ? "▴" : "▴";
+  $("drawer-size").title = ["Open the drawer (D)", "Make taller (D)", "Collapse (D)"][i];
+  requestAnimationFrame(() => { drawTopo(); drawCharts(); fitTerm(); });
+}
+$("drawer-size").addEventListener("click", () => setDrawer((drawerSize + 1) % 3));
+
+/* ---------- controls ---------- */
+function setSeg(id, value) { for (const b of $(id).querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.v === String(value))); }
+const bitrateSteps = () => ui.proto === "tcp" ? [...BITRATES, 0] : BITRATES;
+function syncControls() {
+  setSeg("path", ui.row); setSeg("proto", ui.proto); setSeg("dir", ui.reverse ? "down" : "up"); setSeg("interval", ui.interval);
+  $("parallel").value = ui.parallel; $("parallel-v").textContent = ui.parallel;
+  const steps = bitrateSteps();
+  if (ui.proto === "udp" && ui.bitrate === 0) ui.bitrate = 100;
+  let i = steps.indexOf(ui.bitrate);
+  if (i < 0) { i = steps.length - 1; ui.bitrate = steps[i]; }
+  $("bitrate").max = steps.length - 1; $("bitrate").value = i;
+  $("bitrate-v").textContent = ui.bitrate === 0 ? "unlimited" : `${ui.bitrate.toLocaleString()} Mbit/s${ui.parallel > 1 ? " per stream" : ""}`;
+  let li = LENGTHS.indexOf(ui.length);
+  if (li < 0) { li = LENGTHS.length - 1; ui.length = 1448; }
+  $("length").max = LENGTHS.length - 1; $("length").value = li; $("length").disabled = ui.proto !== "udp";
+  $("length-v").textContent = ui.proto === "udp" ? `${ui.length} B` : "n/a for TCP";
+  $("length-hint").textContent = ui.proto === "udp" ? `${ui.length + 42}-byte frames · ${fmtInt(ui.bitrate * ui.parallel * 1e6 / 8 / (ui.length + 28))} packets/s offered` : "TCP sends full 1448-byte segments";
+  const r = rowInfo(ui.row);
+  $("path-note").innerHTML = !r ? "" : r.router ? `<b>${esc(r.router)}</b> <code>${esc(r.cmdline)}</code>` : "No router: the ceiling of the emulated network itself";
+  $("cmd-preview").textContent = r ? `iperf3 -c ${r.server_ip} -t 0 -i ${ui.interval} -P ${ui.parallel}` + (ui.proto === "udp" ? ` -u -b ${ui.bitrate}M -l ${ui.length}` : ui.bitrate ? ` -b ${ui.bitrate}M` : "") + (ui.reverse ? " -R" : "") : "";
+  $("go").textContent = running ? "Stop" : "Start";
+  $("go").classList.toggle("stop", running);
+  $("go").disabled = !lab || !lab.topology;
+  const c = serverCond();
+  $("cond-now").textContent = condText(c);
+  for (const b of $("cond-presets").querySelectorAll("button")) {
+    const p = COND_PRESETS[b.dataset.c];
+    b.setAttribute("aria-pressed", String(p.delay === c.delay && p.jitter === c.jitter && p.loss === c.loss && p.corrupt === c.corrupt));
+  }
+  for (const b of $("traffic-presets").querySelectorAll("button")) {
+    const p = TRAFFIC_PRESETS[b.dataset.p], cur = active || {};
+    b.setAttribute("aria-pressed", String(running && p.proto === cur.proto && p.parallel === cur.parallel && p.bitrate === cur.bitrate
+      && !!p.reverse === !!cur.reverse && (p.proto === "tcp" || p.length === cur.length)));
+  }
+}
+const params = () => ({ row: ui.row, proto: ui.proto, parallel: ui.parallel, bitrate: ui.bitrate, length: ui.length, reverse: ui.reverse, interval: ui.interval });
+let restartTimer = null;
+function trafficChanged() { syncControls(); drawTopo(); if (running) { clearTimeout(restartTimer); restartTimer = setTimeout(startRun, 450); } }
+async function startRun() { $("run-error").textContent = ""; try { await api("/api/run", params()); } catch (e) { $("run-error").textContent = e.message; toast(e.message); } }
+async function stopRun() { try { await api("/api/stop", {}); } catch (e) { toast(e.message); } }
+async function setConditions(linkId, cond) {
+  try { await api("/api/conditions", { link_id: linkId, ...cond }); } catch (e) { toast(e.message); }
+}
+function selectRow(v) {
+  if (ui.row === v) return;
+  ui.row = v; router = null; peakRouterPps = 0;
+  api("/api/focus", { row: v }).catch(() => {});
+  trafficChanged(); renderRouter(); renderJourney();
+}
+function wireSeg(id, fn) { $(id).addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) fn(b.dataset.v); }); }
+wireSeg("path", selectRow);
+wireSeg("proto", (v) => { ui.proto = v; trafficChanged(); });
+wireSeg("dir", (v) => { ui.reverse = v === "down"; trafficChanged(); });
+wireSeg("interval", (v) => { ui.interval = Number(v); trafficChanged(); });
+wireSeg("window", (v) => { windowSecs = Number(v); setSeg("window", v); drawCharts(); });
+wireSeg("smooth", (v) => {
+  smoothTau = Number(v); setSeg("smooth", v);
+  try { localStorage.setItem("labui.smooth", v); } catch (e) { /* no storage */ }
+  drawCharts(); updateKpis(); renderJourney(); renderRouter();
+});
+$("parallel").addEventListener("input", (e) => { ui.parallel = Number(e.target.value); trafficChanged(); });
+$("bitrate").addEventListener("input", (e) => { ui.bitrate = bitrateSteps()[Number(e.target.value)]; trafficChanged(); });
+$("length").addEventListener("input", (e) => { ui.length = LENGTHS[Number(e.target.value)]; trafficChanged(); });
+$("traffic-presets").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  Object.assign(ui, { length: 1448 }, TRAFFIC_PRESETS[b.dataset.p]);
+  syncControls(); clearTimeout(restartTimer); startRun();
+});
+$("cond-presets").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button"), r = rowInfo(ui.row);
+  if (b && r) setConditions(r.link_id, COND_PRESETS[b.dataset.c]);
+});
+$("cond-adjust").addEventListener("click", () => { const r = rowInfo(ui.row); if (r) select({ kind: "link", id: r.link_id }); });
+$("go").addEventListener("click", () => running ? stopRun() : startRun());
+$("anim-toggle").addEventListener("click", toggleAnim);
+function toggleAnim() { animate = !animate; $("anim-toggle").textContent = animate ? "Pause" : "Play"; if (!animate) particles.length = 0; }
+$("anim-toggle").textContent = animate ? "Pause" : "Play";
+$("fullscreen").addEventListener("click", toggleFullscreen);
+function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
+$("help-btn").addEventListener("click", () => $("help").classList.add("show"));
+$("help").addEventListener("click", (e) => { if (e.target === $("help")) $("help").classList.remove("show"); });
+$("start-lab").addEventListener("click", async () => {
+  $("start-lab").disabled = true; $("banner-text").textContent = "Starting the lab nodes…";
+  try { lab = await api("/api/lab/start", {}); afterState(); } catch (e) { $("banner-text").textContent = e.message; }
+  $("start-lab").disabled = false;
+});
+let toastTimer = null;
+function toast(msg) { setStatus("err", msg); clearTimeout(toastTimer); toastTimer = setTimeout(() => setStatus(running ? "live" : "", statusText()), 5000); }
+
+/* keyboard */
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t.closest && (t.closest(".xterm") || t.closest("input[type=text]") || t.tagName === "TEXTAREA" || t.classList.contains("fallback-input"))) return;
+  const k = e.key;
+  if (k === " ") { e.preventDefault(); if (!$("go").disabled) running ? stopRun() : startRun(); }
+  else if (k === "1" || k === "2" || k === "3") selectRow(String(Number(k) - 1));
+  else if (k === "t" || k === "u") { ui.proto = k === "t" ? "tcp" : "udp"; trafficChanged(); }
+  else if (k === "j") showTab("journey"); else if (k === "k") showTab("traffic"); else if (k === "i") showTab("inspect");
+  else if (k === "d") setDrawer((drawerSize + 1) % 3);
+  else if (k === "p") toggleAnim();
+  else if (k === "f") toggleFullscreen();
+  else if (k === "?") $("help").classList.add("show");
+  else if (k === "Escape") { $("help").classList.remove("show"); if (selection) select(null); }
+});
+
+/* ---------- live data: time-based smoothing ----------
+   An exponential moving average with time constant smoothTau seconds, weighted by the real
+   time between samples, so it behaves the same at 0.1 s and 1 s sampling. It applies to every
+   number shown live (iperf3 at both ends and the router's counters); the charts keep the raw
+   samples as a faint line, and the measurements table and CSV use the raw samples. */
+let smoothTau = 1;
+try { const v = localStorage.getItem("labui.smooth"); if (["0", "1", "3"].includes(v)) smoothTau = Number(v); } catch (e) { /* no storage */ }
+const live = { sent: null, recv: null, router: null };
+const KEEP_RAW = new Set(["ts", "seq", "seg", "run", "uptime_s", "active", "heap_used", "heap_size"]);   // counts and clocks stay exact
+function blend(prev, cur, a) {
+  if (typeof cur === "number" && typeof prev === "number") return prev + a * (cur - prev);
+  if (Array.isArray(cur)) return cur.map((v, i) => blend(Array.isArray(prev) ? prev[i] : undefined, v, a));
+  if (cur && typeof cur === "object") {
+    const o = {};
+    for (const k in cur) o[k] = KEEP_RAW.has(k) ? cur[k] : blend(prev && typeof prev === "object" ? prev[k] : undefined, cur[k], a);
+    return o;
+  }
+  return cur;
+}
+const smoothAlpha = (dt) => smoothTau > 0 ? 1 - Math.exp(-Math.max(dt, 0) / smoothTau) : 1;
+function smoothInto(key, s) {
+  const prev = live[key];
+  const reset = !prev || s.ts - prev.ts > 3 || (key === "router" && prev.row !== s.row);
+  live[key] = reset ? { ...s } : blend(prev, s, smoothAlpha(s.ts - prev.ts));
+}
+const fresh = (s, secs = 3) => s && Date.now() / 1000 - s.ts < secs ? s : null;
+const routerFresh = () => { const r = live.router; return r && r.ok && r.row === ui.row && Date.now() / 1000 - r.ts < 3.5 ? r : null; };
+/* Live numbers: 3 significant figures while smoothing (10,372 -> 10,400) so the digits don't flicker */
+function sig3(v) {
+  if (v == null || !isFinite(v)) return "—";
+  if (Math.abs(v) < 1000) return Math.round(v).toLocaleString();
+  const p = Math.pow(10, Math.floor(Math.log10(Math.abs(v))) - 2);
+  return (Math.round(v / p) * p).toLocaleString();
+}
+const fmtLive = (v) => smoothTau > 0 ? sig3(v) : fmtInt(v);
+/* Upload: data enters on eth0 (client side) and leaves on eth1; download is the reverse */
+const portOf = (r, egress) => r ? r.ports.find((p) => p.name === (!!(active && active.reverse) !== egress ? "eth1" : "eth0")) || null : null;
+const ingressPort = (r) => portOf(r, false), egressPort = (r) => portOf(r, true);
+
+function setStatus(kind, text) { $("status").className = "status " + kind; $("status-text").textContent = text; $("status").title = text; }
+function statusText() { return running && active ? `${PATHS[active.row]} · ${trafficText(active)} · ${condText(serverCond())}` : lab ? "Idle" : "Lab not reachable"; }
+function newSegment(ts, p, cond, label) {
+  const last = segments[segments.length - 1];
+  if (last && last.end == null) last.end = ts;
+  segments.push({ id: segments.length + 1, start: ts, end: null, params: p, cond, label });
+  renderTable();
+}
+let lastSeq = 0;
+function handle(ev) {
+  if (ev.seq <= lastSeq) return;
+  lastSeq = ev.seq;
+  if (ev.type === "run") {
+    running = true; active = ev.params; $("run-error").textContent = "";
+    Object.assign(ui, { row: active.row, proto: active.proto, parallel: active.parallel, bitrate: active.bitrate,
+                        length: active.length, reverse: active.reverse, interval: active.interval || ui.interval });
+    if (rowInfo(active.row)) lab.rows[active.row].filters = ev.filters || {};
+    live.sent = live.recv = null;           // a new run starts its averages fresh
+    newSegment(ev.ts, active, filtersToCond(ev.filters), `${PATHS[active.row]} · ${trafficText(active)}`);
+    setStatus("live", statusText()); syncControls(); drawTopo();
+  } else if (ev.type === "stopped") {
+    running = false; active = null;
+    const last = segments[segments.length - 1];
+    if (last && last.end == null) last.end = ev.ts;
+    setStatus(ev.reason === "error" ? "err" : "", ev.reason === "error" ? "Stopped after an error" : "Idle");
+    syncControls(); renderTable(); drawTopo();
+  } else if (ev.type === "conditions") {
+    if (lab && lab.topology) { const l = linkById(ev.link_id); if (l) l.filters = ev.filters; }
+    if (ev.row != null && rowInfo(ev.row)) lab.rows[ev.row].filters = ev.filters;
+    const cur = segments[segments.length - 1];
+    if (running && cur && cur.end == null && ev.row != null && cur.params.row === ev.row) {
+      newSegment(ev.ts, cur.params, filtersToCond(ev.filters), condText(filtersToCond(ev.filters)));
+      setStatus("live", statusText());
+    }
+    syncControls(); drawTopo();
+    if (selection && selection.kind === "link" && selection.id === ev.link_id) renderInspect(false);
+  } else if (ev.type === "sample") {
+    const s = { ts: ev.ts, side: ev.side, mbps: ev.mbps, pps: ev.pps, loss: ev.loss, jitter: ev.jitter, retrans: ev.retrans, est: !!ev.estimated, seg: segments.length };
+    samples.push(s); smoothInto(ev.side, s); trim();
+  } else if (ev.type === "router") {
+    if (ev.ok) {
+      router = ev;
+      smoothInto("router", ev);
+      if (running && ev.row === (active && active.row)) {
+        const out = ev.ports.find((p) => p.name === (active.reverse ? "eth0" : "eth1"));   // data direction
+        if (out) { samples.push({ ts: ev.ts, side: "router", pps: out.tx_pps, seg: segments.length }); trim(); }
+      }
+      peakRouterPps = Math.max(peakRouterPps, ev.forwarded_ps);
+    } else if (ev.row === ui.row) router = ev;
+    renderRouter();
+  } else if (ev.type === "node") {
+    refreshState();
+  } else if (ev.type === "error") {
+    $("run-error").textContent = ev.message; setStatus("err", ev.message);
+  }
+}
+function trim() { if (samples.length > 60000) samples.splice(0, samples.length - 60000); }
+
+function updateKpis() {
+  const r = fresh(live.recv), s = fresh(live.sent), rr = routerFresh();
+  $("k-delivered").innerHTML = r ? `${fmtMbps(r.mbps)}<small>Mbit/s</small>` : "—";
+  $("k-offered").innerHTML = s ? `${fmtMbps(s.mbps)}<small>Mbit/s</small>` : "—";
+  $("k-router").innerHTML = rr && running && egressPort(rr) ? `${fmtK(egressPort(rr).tx_pps)}<small>pkt/s</small>` : "—";
+  if (ui.proto === "udp") {
+    $("k-third-label").textContent = "Loss";
+    $("k-third").innerHTML = r && r.loss != null ? `${r.loss.toFixed(1)}<small>%</small>` : "—";
+    $("k-jitter").innerHTML = r && r.jitter != null ? `${r.jitter.toFixed(2)}<small>ms</small>` : "—";
+  } else {
+    $("k-third-label").textContent = "Retransmits";
+    $("k-third").innerHTML = s && s.retrans != null ? `${fmtLive(s.retrans)}<small>/s</small>` : "—";
+    $("k-jitter").innerHTML = "—";
+  }
+  $("pps-note").textContent = ui.proto === "tcp" ? "TCP: estimated from bytes" : "UDP: counted by the receiver";
+}
+
+/* ---------- journey ---------- */
+function stageHtml(name, pps, mbps, max, cls) {
+  const w = max > 0 && pps != null ? Math.max(0.5, Math.min(100, pps / max * 100)) : 0;
+  return `<div class="stage-row"><div class="top"><span class="name">${name}</span><span><b>${pps == null ? "—" : fmtLive(pps)}</b><small>pkt/s${mbps != null ? " · " + fmtMbps(mbps) + " Mbit/s" : ""}</small></span></div>
+    <div class="bar"><i class="${cls}" style="width:${w}%"></i></div></div>`;
+}
+/* A loss line only when it matters: above 50/s and 3% of the stage before it (TCP counts are estimates, and the
+   two ends and the router are sampled at different moments) */
+const gapHtml = (lost, base, text) => lost > Math.max(50, (active && active.proto === "tcp" ? 0.10 : 0.03) * (base || 0)) ? `<div class="gap"><span class="x">×</span>${fmtLive(lost)}/s ${text}</div>` : `<div class="gap"></div>`;
+const noteHtml = (text) => `<div class="gap"><span class="muted" style="margin-right:4px">↩</span>${text}</div>`;
+/* Everything the router takes in, both directions: what its per-packet ceiling applies to */
+const routerInPps = (rr) => rr ? rr.ports.reduce((a, p) => a + p.rx_pps, 0) : null;
+const routerCeiling = () => Math.max(13000, peakRouterPps * 1.05);
+function renderJourney() {
+  const r = rowInfo(ui.row), s = running ? fresh(live.sent) : null, d = running ? fresh(live.recv) : null, rr = running ? routerFresh() : null;
+  const down = active ? active.reverse : ui.reverse, cond = serverCond();
+  const max = Math.max(s ? s.pps : 0, d ? d.pps : 0, 1);
+  let html = stageHtml(`${down ? "Server" : "Client"} sends`, s && s.pps, s && s.mbps, max, "sent");
+  if (r && r.router) {
+    // data direction only: in on the ingress port, out on the egress port (TCP ACKs travel the other way)
+    const inP = ingressPort(rr), outP = egressPort(rr), rx = inP ? inP.rx_pps : null, fwd = outP ? outP.tx_pps : null;
+    html += gapHtml(s && rx != null ? s.pps - rx : 0, s && s.pps, down && cond.loss ? `lost on the link (${cond.loss}%) or at the router's input` : "dropped at the router's input: its receive ring overflows");
+    html += stageHtml(`${esc(r.router)} receives <small class="muted">${inP ? inP.name : ""}</small>`, rx, inP && inP.rx_mbps, max, "router");
+    html += gapHtml(rx != null && fwd != null ? rx - fwd : 0, rx, "not forwarded (no route, TTL, firewall)");
+    html += stageHtml(`${esc(r.router)} forwards <small class="muted">${outP ? "out " + outP.name : ""}${r.row === "2" ? " · NAT" : ""}</small>`, fwd, outP && outP.tx_mbps, max, "router");
+    if (active && active.proto === "tcp" && outP && outP.rx_pps > 50) html += noteHtml(`plus ${fmtLive(outP.rx_pps)}/s TCP acknowledgements forwarded the other way`);
+    html += gapHtml(fwd != null && d ? fwd - d.pps : 0, fwd, !down && cond.loss ? `lost on the link to the server (${cond.loss}%)` : "lost after the router");
+  } else html += gapHtml(s && d ? s.pps - d.pps : 0, s && s.pps, cond.loss ? `lost on the link (${cond.loss}%)` : "lost on the link");
+  html += stageHtml(`${down ? "Client" : "Server"} receives`, d && d.pps, d && d.mbps, max, "");
+  $("stages").innerHTML = html;
+  $("story").innerHTML = story(r, s, d, rr);
+}
+function story(r, s, d, rr) {
+  if (!lab || !lab.topology) return `<p>Connecting to the lab…</p>`;
+  if (!running || !s || !d) return `<p class="lead">Pick a preset in the top bar, or press <kbd>Space</kbd>.</p>
+    <p>Packets will flow from the client on the left, through ${r && r.router ? `<b>${esc(r.router)}</b>` : "the GNS3 link"}, to the server on the right. Every number here is measured live: by iperf3 at both ends and by LazyDaysOS's own counters in the middle.</p>
+    <p class="muted">Click any node in the topology for its details and a console; click a link for its rates, conditions and a packet capture.</p>`;
+  const out = [], p = active, cond = serverCond(), inP = ingressPort(rr);
+  const dropFrac = inP && s.pps > 0 ? Math.max(0, 1 - inP.rx_pps / s.pps) : 0;
+  if (!r.router) {
+    out.push(`<p class="lead">No router in this path: ${fmtMbps(d.mbps)} Mbit/s is the ceiling of GNS3's emulated network itself.</p><p>Use it as the reference: anything the router paths lose compared with this is LazyDaysOS's cost.</p>`);
+  } else if (dropFrac > 0.05 && inP) {
+    out.push(`<p class="lead">${esc(r.router)} is saturated: it takes in about ${fmtLive(inP.rx_pps)} packets/s, but ${fmtLive(s.pps)}/s arrive.</p>`);
+    out.push(`<p>The other ${Math.round(dropFrac * 100)}% never reach the kernel: the network card's receive ring fills up because the CPU can't empty it fast enough. Everything that does get in is forwarded.</p>`);
+    out.push(p.proto === "udp" && p.length < 512 ? `<p>Smaller packets don't help: the limit is packets per second, not bytes. At ${p.length}-byte payloads that ceiling is only ${fmtMbps(d.mbps)} Mbit/s.</p>`
+      : `<p>Try <b>small packets</b>: the router's packet rate stays about the same, so throughput collapses. That is what <code>-O2</code> and fewer copies per packet should improve.</p>`);
+  } else if (p.proto === "tcp") {
+    const ls = fresh(live.sent);
+    const outP = egressPort(rr), data = outP ? outP.tx_pps : d.pps, acks = outP ? outP.rx_pps : null, total = routerInPps(rr);
+    out.push(`<p class="lead">TCP matches its sending rate to what gets through: ${fmtMbps(d.mbps)} Mbit/s, about ${fmtLive(data)} data packets/s through ${esc(r.router)}.</p>`);
+    if (acks != null && acks > 50) out.push(`<p>The acknowledgements cost the router packets too: ${fmtLive(acks)}/s flow back the other way, so it handles about ${fmtLive(total)} packets/s in total`
+      + (total > 0.85 * routerCeiling() ? `, at its per-packet ceiling. That is why TCP stops at ${fmtLive(data)} data packets/s here.</p>` : `.</p>`));
+    out.push(`<p>It finds the limit by overshooting now and then${ls && ls.retrans != null ? `: the ${fmtLive(ls.retrans)} retransmissions/s are the probes that got dropped` : ""}. The small grey dots flowing back are its acknowledgements.</p>`);
+  } else {
+    out.push(`<p class="lead">At ${fmtLive(s.pps)} packets/s ${esc(r.router)} keeps up: what is offered is delivered.</p><p>Raise the offered rate to find its ceiling, around ${sig3(Math.max(peakRouterPps, 12000))} packets/s on this build.</p>`);
+  }
+  if (r.row === "2" && rr) out.push(`<p>NAT: every packet leaving ${p.reverse ? "eth0 toward the client is translated back" : `eth1 gets its source rewritten <code>${r.client_ip}</code> → <code>${cmdIp(r.cmdline, "eth1")}</code>`}, tracked as one of ${rr.nat.active} connections. Capture the R-nat ⇄ srv-2 link to see it on the wire.</p>`);
+  if (cond.loss) out.push(p.proto === "tcp" ? `<p>The link to the server loses ${cond.loss}% of packets. TCP reads every loss as congestion and backs off, so throughput falls far more than ${cond.loss}%.</p>`
+    : `<p>The link to the server loses ${cond.loss}% of packets. UDP doesn't react: the loss simply shows up at the receiver.</p>`);
+  if (cond.delay) out.push(`<p>Each direction adds ${cond.delay} ms, so every round trip is ${cond.delay * 2} ms longer${p.proto === "tcp" ? ": TCP needs more data in flight to keep the link busy" : ""}.</p>`);
+  if (p.parallel > 1) out.push(`<p>${p.parallel} streams share one router: their total is what counts.</p>`);
+  return out.join("");
+}
+
+/* ---------- topology ---------- */
+const topo = { stage: $("stage"), svg: $("topo-svg"), canvas: $("topo-canvas"), map: null, centers: {}, ringR: 40, scale: 1 };
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function pill(parent, x, y, lines, cls = "pill") {
+  const g = el("g", { class: cls }, parent);
+  const w = Math.max(...lines.map((l) => l.text.length)) * 6.6 + 16, h = lines.length * 14 + 8;
+  el("rect", { x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 7 }, g);
+  lines.forEach((l, i) => el("text", { x, y: y - h / 2 + 15 + i * 14, "text-anchor": "middle", class: l.cls || "" }, g, l.text));
+}
+function drawTopo() {
+  const t = lab && lab.topology, svg = topo.svg;
+  svg.replaceChildren();
+  const W = topo.stage.clientWidth, H = topo.stage.clientHeight;
+  if (!t || !W || !H) return;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of t.nodes) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x + n.w); y1 = Math.max(y1, n.y + n.h); }
+  const hudH = document.querySelector(".hud").offsetHeight + 24, dockH = Math.max(document.querySelector(".dock").offsetHeight, document.querySelector(".legend-ov").offsetHeight) + 30;
+  const padX = 80, padTop = hudH + 30, padBottom = dockH + 40;
+  const s = Math.min((W - 2 * padX) / (x1 - x0), Math.max(0.3, (H - padTop - padBottom) / (y1 - y0 + 40)), 1.4);
+  const ox = (W - (x1 - x0) * s) / 2 - x0 * s, oy = padTop + Math.max(0, (H - padTop - padBottom - (y1 - y0) * s) / 2) - y0 * s;
+  const map = (x, y) => [ox + x * s, oy + y * s];
+  topo.map = map; topo.scale = s;
+  const byId = {}; for (const n of t.nodes) byId[n.id] = n;
+  const center = (n) => map(n.x + n.w / 2, n.y + n.h / 2);
+  topo.centers = {}; for (const n of t.nodes) topo.centers[n.id] = center(n);
+  const rowOf = {}; for (const r of Object.values(lab.rows)) for (const id of Object.values(r.nodes)) if (id) rowOf[id] = r.row;
+  const rowYs = Object.values(lab.rows).map((r) => center(byId[r.nodes.client])[1]).sort((a, b) => a - b);
+  const rowGap = rowYs.length > 1 ? Math.min(...rowYs.slice(1).map((v, i) => v - rowYs[i])) : 160 * s;
+  const ringR = Math.min(38 * s + 6, rowGap * 0.25);
+  topo.ringR = ringR;
+
+  for (const r of Object.values(lab.rows)) {
+    const ns = Object.values(r.nodes).filter(Boolean).map((id) => byId[id]), xs = ns.map((n) => center(n)[0]), yc = avg(ns.map((n) => center(n)[1]));
+    const act = r.row === ui.row, bandH = Math.min(rowGap - 6, ringR * 2 + 80);
+    const band = el("rect", { x: Math.min(...xs) - 64, y: yc - bandH / 2 + 4, width: Math.max(...xs) - Math.min(...xs) + 128, height: bandH - 8, rx: 14, class: "band" + (act ? " active" : "") }, svg);
+    band.addEventListener("click", () => selectRow(r.row));
+    el("title", {}, band, `Test the ${r.name} path (${Number(r.row) + 1})`);
+    el("text", { x: Math.min(...xs) - 52, y: yc - bandH / 2 + 22, class: "rowlabel" + (act ? " active" : "") }, svg,
+       `${Number(r.row) + 1} · ${r.name}` + (r.router ? (r.row === "2" ? " · NAT router" : " · router") : " · no router"));
+  }
+  for (const l of t.links) {
+    const [ax, ay] = topo.centers[l.a], [bx, by] = topo.centers[l.b];
+    const act = rowOf[l.a] === ui.row, sel = selection && selection.kind === "link" && selection.id === l.id;
+    const hit = el("line", { x1: ax, y1: ay, x2: bx, y2: by, class: "link-hit" }, svg);
+    el("line", { x1: ax, y1: ay, x2: bx, y2: by, class: "link" + (sel ? " selected" : act ? " active" : " dim") }, svg);
+    hit.addEventListener("click", (e) => { e.stopPropagation(); select({ kind: "link", id: l.id }); });
+    el("title", {}, hit, `${linkName(l)}: click for rates, conditions and a capture`);
+    for (const [id, port, px, py, qx, qy] of [[l.a, l.a_port, ax, ay, bx, by], [l.b, l.b_port, bx, by, ax, ay]]) {
+      if (byId[id].type !== "qemu") continue;
+      const k = (ringR + 16) / Math.hypot(qx - px, qy - py);
+      el("text", { x: px + (qx - px) * k, y: py + (qy - py) * k - 7, "text-anchor": "middle", class: "port" + (act ? "" : " dim") }, svg, "eth" + port);
+    }
+  }
+  for (const n of t.nodes) {
+    const [cx, cy] = topo.centers[n.id], act = rowOf[n.id] === ui.row, sel = selection && selection.kind === "node" && selection.id === n.id;
+    const g = el("g", { class: "node" + (act ? "" : " dim") + (sel ? " selected" : "") }, svg);
+    const iw = n.w * s, ih = n.h * s, below = n.type === "qemu" ? Math.max(ih / 2, ringR + 2) : ih / 2;
+    el("rect", { x: cx - Math.max(iw, 90) / 2 - 6, y: cy - ih / 2 - 6, width: Math.max(iw, 90) + 12, height: below + ih / 2 + (n.type === "qemu" ? 56 : 42), class: "hit" }, g);
+    el("image", { href: "/api/symbol?id=" + encodeURIComponent(n.symbol), x: cx - iw / 2, y: cy - ih / 2, width: iw, height: ih }, g);
+    el("circle", { cx: cx + iw / 2 - 2, cy: cy - ih / 2 + 3, r: 4.5, fill: n.status === "started" ? "var(--good)" : "var(--muted)", stroke: "var(--page)", "stroke-width": 2 }, g);
+    el("text", { x: cx, y: cy + below + 15, "text-anchor": "middle", class: "node-name" }, g, n.name);
+    const row = lab.rows[rowOf[n.id]];
+    let ip = "";
+    if (row) ip = row.nodes.client === n.id ? row.client_ip : row.nodes.server === n.id ? row.server_ip : row.cmdline ? `${cmdIp(row.cmdline, "eth0")} | ${cmdIp(row.cmdline, "eth1")}` : "";
+    if (ip) el("text", { x: cx, y: cy + below + 29, "text-anchor": "middle", class: "node-ip" }, g, ip);
+    el("title", {}, g, `${n.name} (${n.status}): click for details and a console`);
+    g.addEventListener("click", (e) => { e.stopPropagation(); select({ kind: "node", id: n.id }); });
+  }
+  drawTopoLive();
+}
+function drawTopoLive() {
+  const old = topo.svg.querySelector("#live"); if (old) old.remove();
+  const t = lab && lab.topology, r = rowInfo(ui.row);
+  if (!t || !r || !topo.map) return;
+  const g = el("g", { id: "live" }, topo.svg), cs = topo.centers;
+  const cli = cs[r.nodes.client], srv = cs[r.nodes.server], rt = r.nodes.router ? cs[r.nodes.router] : null;
+  const sent = running ? fresh(live.sent) : null, recv = running ? fresh(live.recv) : null, rr = running ? routerFresh() : null;
+  const down = active ? active.reverse : ui.reverse, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const linkPill = (a, b, mbps, pps) => { if (mbps == null) return; const [mx, my] = mid(a, b); pill(g, mx, my - 22, [{ text: `${fmtMbps(mbps)} Mbit/s` }, { text: `${fmtK(pps)} pkt/s`, cls: "sub" }]); };
+  if (rt) {
+    const inP = ingressPort(rr), outP = egressPort(rr);
+    const inM = sent && sent.mbps, inPps = sent && sent.pps, outM = outP ? outP.tx_mbps : recv && recv.mbps, outPps = outP ? outP.tx_pps : recv && recv.pps;
+    if (!down) { linkPill(cli, rt, inM, inPps); linkPill(rt, srv, outM, outPps); } else { linkPill(srv, rt, inM, inPps); linkPill(rt, cli, outM, outPps); }
+    const rx = routerInPps(rr) || 0, ceiling = routerCeiling(), frac = Math.min(1, rx / ceiling), rad = topo.ringR;
+    el("circle", { cx: rt[0], cy: rt[1], r: rad, class: "ring-track" }, g);
+    const hot = sent && inP && sent.pps > 0 && inP.rx_pps / sent.pps < 0.95;
+    if (frac > 0.001) {
+      const a0 = -Math.PI / 2, a1 = a0 + frac * 2 * Math.PI * 0.9999;
+      el("path", { d: `M${rt[0] + rad * Math.cos(a0)},${rt[1] + rad * Math.sin(a0)} A${rad},${rad} 0 ${frac > 0.5 ? 1 : 0} 1 ${rt[0] + rad * Math.cos(a1)},${rt[1] + rad * Math.sin(a1)}`, class: "ring" + (hot ? " hot" : "") }, g);
+    }
+    // one status line under the router's name and address: load (or saturation) and the NAT table
+    const parts = [];
+    if (rr && running) parts.push(hot ? "⚠ saturated: dropping at input" : `${fmtK(rx)} pkt/s in · ${Math.round(frac * 100)}% load`);
+    if (r.row === "2" && rr) parts.push(`NAT ${rr.nat.active} conn`);
+    const n = nodeById(r.nodes.router), below = Math.max(n.h * topo.scale / 2, rad + 2);
+    if (parts.length) el("text", { x: rt[0], y: rt[1] + below + 43, "text-anchor": "middle", class: hot ? "hotlabel" : "load-sub" }, g, parts.join(" · "));
+  } else if (recv) { if (!down) linkPill(cli, srv, recv.mbps, recv.pps); else linkPill(srv, cli, recv.mbps, recv.pps); }
+  for (const l of t.links) {           // conditions on any link
+    const c = filtersToCond(l.filters);
+    if (!(c.delay || c.jitter || c.loss || c.corrupt)) continue;
+    const [mx, my] = mid(cs[l.a], cs[l.b]);
+    pill(g, mx, my + 24, [{ text: "⚠ " + condText(c) }], "pill cond");
+  }
+}
+topo.stage.addEventListener("click", (e) => { if (e.target === topo.svg) select(null); });
+new ResizeObserver(() => { drawTopo(); fitTerm(); }).observe(topo.stage);
+
+/* particles */
+const particles = [];
+let lastFrame = performance.now(), spawnAcc = 0, ackAcc = 0, colors = {};
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function refreshColors() { colors = { s1: cssVar("--s1"), s3: cssVar("--s3"), crit: cssVar("--critical"), muted: cssVar("--muted") }; }
+refreshColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { refreshColors(); drawTopo(); applyTermTheme(); });
+function routePoints() {
+  const r = rowInfo(ui.row);
+  if (!r || !topo.map) return null;
+  const cs = topo.centers, cli = cs[r.nodes.client], srv = cs[r.nodes.server], rt = r.nodes.router ? cs[r.nodes.router] : null, down = active ? active.reverse : ui.reverse;
+  const from = down ? srv : cli, to = down ? cli : srv;
+  return rt ? [from, rt, to] : [from, to];
+}
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastFrame) / 1000); lastFrame = now;
+  const cv = topo.canvas, W = topo.stage.clientWidth, H = topo.stage.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const pts = routePoints(), sent = running ? fresh(live.sent) : null;
+  if (animate && pts && sent && sent.pps > 0 && active && active.row === ui.row) {
+    const r = rowInfo(ui.row), rr = routerFresh(), inP = ingressPort(rr), recv = fresh(live.recv), down = active.reverse, cond = serverCond();
+    let dropRouter = 0;
+    if (r.router && inP) dropRouter = Math.max(0, 1 - inP.rx_pps / sent.pps);
+    else if (r.router && recv) dropRouter = Math.max(0, 1 - recv.pps / sent.pps - cond.loss / 100);
+    const lossSeg = r.router ? (down ? 0 : 1) : 0;
+    spawnAcc += Math.min(70, Math.max(2, sent.pps / 350)) * dt;
+    const size = active.proto === "udp" ? active.length : 1448;
+    while (spawnAcc >= 1 && particles.length < 700) {
+      spawnAcc -= 1;
+      particles.push({ seg: 0, t: Math.random() * 0.05, size, drop: r.router && Math.random() < dropRouter, lossDrop: Math.random() < cond.loss / 100, ack: false, dying: 0, jx: (Math.random() - 0.5) * 6, jy: (Math.random() - 0.5) * 6 });
+    }
+    if (active.proto === "tcp" && recv) {
+      ackAcc += Math.min(35, Math.max(1, recv.pps / 700)) * dt;
+      while (ackAcc >= 1 && particles.length < 700) { ackAcc -= 1; particles.push({ seg: 0, t: 0, size: 0, drop: false, lossDrop: false, ack: true, dying: 0, jx: 0, jy: (Math.random() - 0.5) * 4 }); }
+    }
+    const back = [...pts].reverse();
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i], path = p.ack ? back : pts;
+      if (p.dying > 0) {
+        p.dying -= dt; p.fy += 40 * dt;
+        if (p.dying <= 0) { particles.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, p.dying / 0.7); ctx.strokeStyle = colors.crit; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p.fx - 4, p.fy - 4); ctx.lineTo(p.fx + 4, p.fy + 4); ctx.moveTo(p.fx + 4, p.fy - 4); ctx.lineTo(p.fx - 4, p.fy + 4); ctx.stroke();
+        ctx.globalAlpha = 1; continue;
+      }
+      const onLossLink = !p.ack && p.seg === lossSeg;
+      p.t += dt / (1.0 + (onLossLink ? Math.min(2.5, cond.delay / 40) : 0));
+      const a = path[p.seg], b = path[p.seg + 1];
+      if (onLossLink && p.lossDrop && p.t >= 0.5) { p.dying = 0.7; p.fx = (a[0] + b[0]) / 2 + p.jx; p.fy = (a[1] + b[1]) / 2 + p.jy; continue; }
+      if (p.t >= 1) {
+        if (!p.ack && p.seg === 0 && p.drop) { p.dying = 0.7; p.fx = b[0] - 30 + p.jx; p.fy = b[1] + p.jy; continue; }
+        p.seg += 1; p.t = 0;
+        if (p.seg >= path.length - 1) { particles.splice(i, 1); continue; }
+      }
+      const c0 = path[p.seg], c1 = path[p.seg + 1];
+      const afterNat = r.row === "2" && !p.ack && ((!down && p.seg >= 1) || (down && p.seg === 0));
+      ctx.fillStyle = p.ack ? colors.muted : afterNat ? colors.s3 : colors.s1;
+      ctx.beginPath(); ctx.arc(c0[0] + (c1[0] - c0[0]) * p.t + p.jx, c0[1] + (c1[1] - c0[1]) * p.t + p.jy, p.ack ? 1.4 : 1.6 + 2.8 * (p.size / 1448), 0, 2 * Math.PI); ctx.fill();
+    }
+  } else particles.length = 0;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- inspector: selection ---------- */
+function select(sel) {
+  const changed = JSON.stringify(sel) !== JSON.stringify(selection);
+  selection = sel;
+  if (changed) closeConsole();
+  drawTopo();
+  if (sel) { renderInspect(true); showTab("inspect"); }
+  else { renderInspect(true); if ($("p-inspect").classList.contains("show")) showTab("journey"); }
+}
+function factsHtml(rows) { return `<dl class="facts">${rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`; }
+function renderInspect(full) {
+  const body = $("inspect-body");
+  if (!selection || !lab || !lab.topology) {
+    $("inspect-name").textContent = "";
+    body.innerHTML = `<div class="empty-sel"><b>Click a node or a link</b> in the topology.<br><br>Nodes: details, start/stop, and a console (a shell on hosts, the kernel log on routers).<br>Links: live rates, conditions, and a packet capture you can read here or open in Wireshark.</div>`;
+    return;
+  }
+  if (selection.kind === "node") return renderNode(body, full);
+  return renderLink(body, full);
+}
+function renderNode(body, full) {
+  const n = nodeById(selection.id);
+  if (!n) { selection = null; return renderInspect(true); }
+  $("inspect-name").textContent = "· " + n.name;
+  const row = rowOfNode(n.id), on = n.status === "started";
+  const role = row ? (row.nodes.client === n.id ? "iperf3 client" : row.nodes.server === n.id ? "iperf3 server" : "LazyDaysOS router") : n.type;
+  const head = `<div class="sel-head"><img src="/api/symbol?id=${encodeURIComponent(n.symbol)}" alt=""><div><div class="title">${esc(n.name)}</div>
+    <div class="sub">${esc(role)} · ${row ? esc(row.name) + " path" : ""}</div></div><div class="grow"></div><span class="pill-status ${on ? "on" : ""}"><i></i>${esc(n.status)}</span></div>`;
+  const facts = factsHtml([
+    ["Address", row ? (row.nodes.client === n.id ? row.client_ip : row.nodes.server === n.id ? row.server_ip : esc(`${cmdIp(row.cmdline, "eth0")} (eth0) · ${cmdIp(row.cmdline, "eth1")} (eth1)`)) : ""],
+    ["Kernel command line", n.type === "qemu" && row ? `<code>${esc(row.cmdline)}</code>` : ""],
+    ["Image", n.image ? `<code>${esc(n.image)}</code>` : n.type === "qemu" ? "LazyDaysOS.bin (sysroot/)" : ""],
+    ["Container", n.type === "docker" && lab ? `<code>GNS3.${esc(n.name)}.…</code>` : ""],
+    ["RAM", n.ram ? n.ram + " MB" : ""],
+    ["Console", n.console ? `${n.console_type} :${n.console}` : ""],
+  ]);
+  const actions = `<div class="btn-row">${on ? `<button class="icon-btn" data-act="reload">Restart</button><button class="icon-btn" data-act="stop">Stop</button>` : `<button class="icon-btn" data-act="start">Start</button>`}</div>`;
+  if (full || !$("term-wrap")) {
+    body.innerHTML = `${head}<div class="sec">${facts}</div><div class="sec">${actions}</div>
+      <div class="term-wrap" id="term-wrap"><div class="term-bar"><b>${n.type === "qemu" ? "Serial console (kernel log)" : "Shell"}</b><span class="grow"></span>
+        <button class="icon-btn" id="term-btn">${on ? "Open" : "Node is stopped"}</button></div>
+        <div class="term-empty" id="term-empty">${n.type === "qemu" ? "The router's COM1: LazyDaysOS logs events here (leases, devices, blocks). It reads the keyboard, not this line, so the console is read-only." : `A shell inside the ${esc(n.name)} container: try <code>ip route</code>, <code>ping ${row ? (row.nodes.client === n.id ? row.server_ip : row.client_ip) : ""}</code>, <code>sh /lab/tests.sh tcp</code> or <code>tcpdump -nni eth0</code>.`}</div>
+        <div class="term" id="term" style="display:none"></div></div>`;
+    $("term-btn").disabled = !on;
+    $("term-btn").addEventListener("click", () => termSession ? closeConsole() : openConsole(n));
+    body.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
+      b.disabled = true;
+      try { await api("/api/node/action", { node_id: n.id, action: b.dataset.act }); closeConsole(); await refreshState(); renderInspect(true); }
+      catch (e) { toast(e.message); b.disabled = false; }
+    }));
+  }
+}
+function renderLink(body, full) {
+  const l = linkById(selection.id);
+  if (!l) { selection = null; return renderInspect(true); }
+  $("inspect-name").textContent = "· link";
+  const a = nodeById(l.a), b = nodeById(l.b), c = filtersToCond(l.filters), row = rowOfNode(l.a);
+  const port = (n, p) => n.type === "qemu" ? `eth${p}` : "eth0";
+  const toServer = row && row.link_id === l.id;
+  if (!full && $("link-live")) { $("link-live").innerHTML = linkLive(l); return; }
+  body.innerHTML = `<div class="sel-head"><div><div class="title">${esc(a.name)} <span class="muted">${port(a, l.a_port)}</span> ⇄ ${esc(b.name)} <span class="muted">${port(b, l.b_port)}</span></div>
+      <div class="sub">${row ? esc(row.name) + " path" : ""}${toServer ? " · link to the server" : ""}</div></div></div>
+    <div class="sec" id="link-live">${linkLive(l)}</div>
+    <div class="sec"><div class="sec-title">Conditions on this link <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">· both directions</span></div>
+      <div class="chips" style="margin-bottom:10px" id="lc-presets">${Object.keys(COND_PRESETS).map((k) => `<button class="chip" data-c="${k}">${k === "far" ? "long haul" : k}</button>`).join("")}</div>
+      ${["delay|Delay, each direction|0|200|ms", "jitter|Jitter ±|0|50|ms", "loss|Packet loss|0|30|%", "corrupt|Corruption|0|10|%"].map((d) => {
+        const [k, label, lo, hi, unit] = d.split("|");
+        return `<div class="field"><div class="label">${label} <b id="lc-${k}-v">${c[k]} ${unit}</b></div><input type="range" id="lc-${k}" min="${lo}" max="${hi}" value="${c[k]}" data-unit="${unit}"></div>`;
+      }).join("")}
+      <div class="hint">A GNS3 link filter, applied instantly. Current: <b id="lc-now">${condText(c)}</b></div></div>
+    <div class="sec"><div class="sec-title">Packet capture</div>
+      <div class="btn-row" style="align-items:center"><div class="seg small" id="cap-secs"><button data-v="0.5">0.5 s</button><button data-v="1" aria-pressed="true">1 s</button><button data-v="3">3 s</button></div>
+        <button class="run" id="cap-go">Capture</button><span class="muted" id="cap-state" style="font-size:12px"></span></div>
+      <div class="hint">Decoded with tcpdump below (first 80 packets); the full file opens in Wireshark. At full speed a second is ~10,000 packets.</div>
+      <div id="cap-out"></div></div>`;
+  let capSecs = 1;
+  $("cap-secs").addEventListener("click", (e) => { const bt = e.target.closest("button"); if (!bt) return; capSecs = Number(bt.dataset.v); setSeg("cap-secs", bt.dataset.v); });
+  $("cap-go").addEventListener("click", async () => {
+    $("cap-go").disabled = true; $("cap-state").textContent = `capturing ${capSecs} s…`;
+    try {
+      const res = await api("/api/capture", { link_id: l.id, seconds: capSecs });
+      $("cap-state").textContent = `${fmtInt(res.packets)} packets, ${fmtInt(res.bytes / 1024)} KiB`;
+      const natIp = row && row.row === "2" ? cmdIp(row.cmdline, "eth1") : null;
+      const lines = res.lines.map((x) => { let h = esc(x); if (natIp) h = h.split(natIp).join(`<span class="nat">${natIp}</span>`); return h; });
+      $("cap-out").innerHTML = `<div class="btn-row" style="margin-top:8px"><a class="icon-btn" href="/api/capture/file?name=${encodeURIComponent(res.name)}" download>Download .pcap</a>
+        ${natIp && res.lines.some((x) => x.includes(natIp)) ? `<span class="hint" style="margin:0">Highlighted: the router's outside address. NAT replaced the client's ${row.client_ip} with it.</span>` : ""}</div>
+        <pre class="packets">${lines.join("\n") || (res.error ? esc(res.error) : "No packets in that window: start a test first.")}</pre>`;
+    } catch (e) { $("cap-state").textContent = e.message; }
+    $("cap-go").disabled = false;
+  });
+  let t = null;
+  const send = () => { clearTimeout(t); t = setTimeout(() => setConditions(l.id, { delay: +$("lc-delay").value, jitter: +$("lc-jitter").value, loss: +$("lc-loss").value, corrupt: +$("lc-corrupt").value }), 250); };
+  for (const k of ["delay", "jitter", "loss", "corrupt"]) $("lc-" + k).addEventListener("input", (e) => { $(`lc-${k}-v`).textContent = `${e.target.value} ${e.target.dataset.unit}`; send(); });
+  $("lc-presets").addEventListener("click", (e) => { const bt = e.target.closest("button"); if (bt) setConditions(l.id, COND_PRESETS[bt.dataset.c]); });
+}
+function linkLive(l) {
+  const row = rowOfNode(l.a);
+  if (!row || row.row !== ui.row || !running) return `<div class="muted" style="font-size:13px">No test on this link right now${row && row.row !== ui.row ? ` (press ${Number(row.row) + 1} to test the ${esc(row.name)} path)` : ""}.</div>`;
+  const rr = routerFresh(), sent = fresh(live.sent), recv = fresh(live.recv), down = active.reverse;
+  const ingress = row.links.ingress === l.id;
+  let mbps, pps, who;
+  if (!row.router) { mbps = recv && recv.mbps; pps = recv && recv.pps; who = "delivered"; }
+  else if (ingress !== down) { mbps = sent && sent.mbps; pps = sent && sent.pps; who = "offered by the sender"; }
+  else { const p = egressPort(rr); mbps = p ? p.tx_mbps : recv && recv.mbps; pps = p ? p.tx_pps : recv && recv.pps; who = "sent by the router"; }
+  return factsHtml([["Carrying", `<b>${fmtMbps(mbps)}</b> Mbit/s · <b>${fmtLive(pps)}</b> packets/s <span class="muted">(${who})</span>`],
+    ["Direction", down ? "server → client" : "client → server"]]);
+}
+
+/* ---------- console ---------- */
+let termSession = null, term = null, fit = null, termES = null, fallbackEl = null;
+function termTheme() { return { background: cssVar("--term-bg"), foreground: cssVar("--term-fg"), cursor: cssVar("--accent"), selectionBackground: cssVar("--wash-2") }; }
+function applyTermTheme() { if (term) term.options.theme = termTheme(); }
+async function openConsole(n) {
+  closeConsole();
+  const host = $("term"), empty = $("term-empty");
+  if (!host) return;
+  try {
+    const res = await api("/api/console/open", { node_id: n.id });
+    termSession = res.id;
+    empty.style.display = "none"; host.style.display = "block"; $("term-btn").textContent = "Close";
+    if (window.Terminal) {
+      term = new window.Terminal({ fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace', fontSize: 13, cursorBlink: res.kind === "shell",
+                                   disableStdin: res.kind !== "shell", theme: termTheme(), scrollback: 5000, convertEol: false });
+      if (window.FitAddon) { fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); }
+      term.open(host);
+      fitTerm();
+      term.onData((d) => api("/api/console/input", { id: termSession, data: d }).catch(() => {}));
+      term.focus();
+    } else {            // no CDN: plain text log and a line input
+      host.innerHTML = `<pre class="fallback-term" id="fb-out"></pre>${res.kind === "shell" ? '<input class="fallback-input" id="fb-in" placeholder="type a command, Enter to send">' : ""}`;
+      host.style.display = "flex"; host.style.flexDirection = "column";
+      fallbackEl = $("fb-out");
+      const inp = $("fb-in");
+      if (inp) inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { api("/api/console/input", { id: termSession, data: inp.value + "\r" }); inp.value = ""; } });
+    }
+    const id = termSession;
+    termES = new EventSource("/api/console/stream?id=" + id);
+    termES.onmessage = (m) => {
+      const bytes = Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0));
+      if (term) term.write(bytes);
+      else if (fallbackEl) { fallbackEl.textContent += new TextDecoder().decode(bytes).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, ""); fallbackEl.scrollTop = 1e9; }
+    };
+    termES.addEventListener("end", () => { if (term) term.write("\r\n\x1b[2m-- session ended --\x1b[0m\r\n"); termES.close(); termES = null; termSession = null; if ($("term-btn")) $("term-btn").textContent = "Reopen"; });
+  } catch (e) { toast(e.message); }
+}
+function closeConsole() {
+  if (termES) { termES.close(); termES = null; }
+  if (termSession) { api("/api/console/close", { id: termSession }).catch(() => {}); termSession = null; }
+  if (term) { term.dispose(); term = null; fit = null; }
+  fallbackEl = null;
+  const host = $("term"), empty = $("term-empty");
+  if (host) { host.innerHTML = ""; host.style.display = "none"; }
+  if (empty) empty.style.display = "";
+  if ($("term-btn")) $("term-btn").textContent = "Open";
+}
+let fitTimer = null;
+function fitTerm() {
+  if (!term || !fit) return;
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => {
+    try { fit.fit(); } catch (e) { return; }
+    if (termSession) api("/api/console/resize", { id: termSession, cols: term.cols, rows: term.rows }).catch(() => {});
+  }, 60);
+}
+window.addEventListener("resize", fitTerm);
+window.addEventListener("beforeunload", () => { if (termSession) navigator.sendBeacon("/api/console/close", new Blob([JSON.stringify({ id: termSession })], { type: "application/json" })); });
+
+/* ---------- router counters ---------- */
+function renderRouter() {
+  const r = rowInfo(ui.row), body = $("d-router");
+  if (!r) return;
+  if (!r.router) { body.innerHTML = `<p class="muted">The baseline path has no router: press 2 or 3 to see LazyDaysOS's counters.</p>`; return; }
+  if (!router || router.row !== ui.row) { body.innerHTML = `<p class="muted">Waiting for ${esc(r.router)}…</p>`; return; }
+  if (!router.ok) { body.innerHTML = `<p class="muted">Can't read ${esc(r.router)}'s counters: ${esc(router.message || "no reply")}</p>`; return; }
+  const rv = routerFresh() || router, n = rv.nat, isNat = r.row === "2", stat = (k, v) => `<div class="rstat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  let html = `<div class="rstats">${stat(`${esc(r.router)} forwards, both ways`, fmtLive(rv.forwarded_ps) + "<small class=muted> /s</small>")}`
+    + stat("NAT connections", isNat ? fmtLive(n.active) : "—") + stat("NAT translations", isNat ? fmtLive(n.outbound_ps + n.inbound_ps) + "<small class=muted> /s</small>" : "—")
+    + stat("Firewall drops", isNat ? fmtLive(n.firewall_dropped_ps) + "<small class=muted> /s</small>" : "—")
+    + stat("Heap used", `${Math.round(rv.heap_used / 1024)}<small class=muted> / ${Math.round(rv.heap_size / 1024)} KiB</small>`) + `</div>`;
+  html += `<table><thead><tr><th>Port</th><th>Role</th><th>Address</th><th class="num">In pkt/s</th><th class="num">Out pkt/s</th><th class="num">In Mbit/s</th><th class="num">Out Mbit/s</th><th class="num">Dropped/s</th></tr></thead><tbody>`;
+  for (const p of rv.ports) html += `<tr><td>${p.name}</td><td>${p.role === "wan" ? "outside (NAT)" : "inside"}</td><td>${esc(p.ipv4 || "—")}</td><td class="num">${fmtLive(p.rx_pps)}</td><td class="num">${fmtLive(p.tx_pps)}</td><td class="num">${fmtMbps(p.rx_mbps)}</td><td class="num">${fmtMbps(p.tx_mbps)}</td><td class="num">${fmtLive(p.rx_dropped_ps + p.tx_dropped_ps)}</td></tr>`;
+  body.innerHTML = html + `</tbody></table><p class="hint">From <code>/api/stats</code> once a second · uptime ${Math.round(rv.uptime_s)} s. "Dropped" is what the kernel itself discards; receive-ring overflows never reach it (see the Journey tab).</p>`;
+}
+
+/* ---------- measurements ---------- */
+function segStats(seg) {
+  const xs = samples.filter((s) => s.seg === seg.id && s.ts >= seg.start + 2), recv = xs.filter((s) => s.side === "recv"), sent = xs.filter((s) => s.side === "sent"), rt = xs.filter((s) => s.side === "router");
+  return { secs: (seg.end ?? Date.now() / 1000) - seg.start, delivered: avg(recv.map((s) => s.mbps)), offered: avg(sent.map((s) => s.mbps)), pps: avg(recv.map((s) => s.pps)),
+           est: recv.some((s) => s.est), router: avg(rt.map((s) => s.pps)), loss: avg(recv.map((s) => s.loss).filter((v) => v != null)), retrans: avg(sent.map((s) => s.retrans).filter((v) => v != null)) };
+}
+let tableQueued = false;
+function renderTable() {
+  if (tableQueued) return;
+  tableQueued = true;
+  requestAnimationFrame(() => {
+    tableQueued = false;
+    const html = [];
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i], cur = seg.end == null && running;
+      if (!cur && !samples.some((s) => s.seg === seg.id)) continue;
+      const st = segStats(seg);
+      html.push(`<tr class="${cur ? "current" : ""}"><td>${seg.id}</td><td>${PATHS[seg.params.row]}</td><td>${trafficText(seg.params)}</td><td>${condText(seg.cond)}</td><td class="num">${Math.round(st.secs)} s</td>
+        <td class="num">${fmtMbps(st.delivered)}</td><td class="num">${fmtMbps(st.offered)}</td><td class="num">${st.est && st.pps != null ? "≈" : ""}${fmtInt(st.pps)}</td><td class="num">${fmtInt(st.router)}</td>
+        <td class="num">${st.loss == null ? "—" : st.loss.toFixed(1)}</td><td class="num">${st.retrans == null ? "—" : fmtInt(st.retrans)}</td></tr>`);
+    }
+    $("rows").innerHTML = html.join("") || '<tr class="empty-row"><td colspan="11">Start a run: each change you make becomes a row here.</td></tr>';
+    $("table-count").textContent = html.length ? html.length : "";
+  });
+}
+$("clear").addEventListener("click", () => {
+  samples.length = 0;
+  const cur = running ? segments[segments.length - 1] : null;
+  segments.length = 0;
+  if (cur) { cur.id = 1; cur.start = Date.now() / 1000; segments.push(cur); }
+  renderTable(); drawCharts();
+});
+$("csv").addEventListener("click", () => {
+  const n = (v, d = 2) => v == null ? "" : v.toFixed(d);
+  const lines = [["segment", "path", "traffic", "conditions", "seconds", "delivered_mbps", "offered_mbps", "delivered_pps", "pps_estimated", "router_forwarded_pps", "loss_pct", "retransmits_per_s"].join(",")];
+  for (const seg of segments) { const st = segStats(seg); lines.push([seg.id, PATHS[seg.params.row], `"${trafficText(seg.params)}"`, `"${condText(seg.cond)}"`, Math.round(st.secs), n(st.delivered), n(st.offered), n(st.pps, 0), st.est, n(st.router, 0), n(st.loss), n(st.retrans, 1)].join(",")); }
+  lines.push("", ["time_s", "segment", "side", "mbps", "pps", "loss_pct", "jitter_ms", "retransmits_per_s"].join(","));
+  const t0 = samples.length ? samples[0].ts : 0;
+  for (const s of samples) lines.push([(s.ts - t0).toFixed(2), s.seg, s.side, s.mbps == null ? "" : s.mbps.toFixed(3), s.pps == null ? "" : Math.round(s.pps), s.loss ?? "", s.jitter ?? "", s.retrans ?? ""].join(","));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  a.download = `lazydaysos-throughput-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ---------- charts ---------- */
+function niceScale(v) {
+  const raw = (v > 0 ? v : 10) / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= raw);
+  return { step, max: Math.ceil((v > 0 ? v : 10) / step - 1e-9) * step, decimals: Math.max(0, -Math.floor(Math.log10(step) + 1e-9) + (step / p === 2.5 ? 1 : 0)) };
+}
+const charts = {
+  tp: { box: $("chart-tp"), markers: true, series: [
+    { side: "recv", key: "mbps", name: "Delivered", color: "var(--s1)", unit: "Mbit/s", fmt: fmtMbps },
+    { side: "sent", key: "mbps", name: "Offered", color: "var(--s2)", unit: "Mbit/s", fmt: fmtMbps }] },
+  pps: { box: $("chart-pps"), markers: false, series: [
+    { side: "recv", key: "pps", name: "Delivered", color: "var(--s1)", unit: "pkt/s", fmt: fmtInt },
+    { side: "sent", key: "pps", name: "Offered", color: "var(--s2)", unit: "pkt/s", fmt: fmtInt },
+    { side: "router", key: "pps", name: "Router forwarded", color: "var(--s3)", unit: "pkt/s", fmt: fmtInt }] },
+};
+function drawChart(c, now) {
+  const svg = c.box.querySelector("svg"), W = c.box.clientWidth, H = c.box.clientHeight;
+  if (!W || !H || !c.box.offsetParent) return;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.replaceChildren();
+  const m = { l: 52, r: 58, t: 16, b: 20 }, pw = W - m.l - m.r, ph = H - m.t - m.b, t0 = now - windowSecs;
+  let lo = 0, hi = samples.length;
+  const lead = 2 + 3 * smoothTau;          // earlier samples so the moving average is settled at the left edge
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (samples[mid].ts < t0 - lead) lo = mid + 1; else hi = mid; }
+  const vis = samples.slice(lo);
+  let max = 0;
+  for (const se of c.series) for (const s of vis) if (s.side === se.side && s[se.key] != null) max = Math.max(max, s[se.key]);
+  const sc = niceScale(max * 1.08), ymax = sc.max, x = (ts) => m.l + (ts - t0) / windowSecs * pw, y = (v) => m.t + ph - v / ymax * ph;
+  c.geom = { x, y, t0, m, pw, ph };
+  for (let v = 0; v <= ymax + 1e-9; v += sc.step) {
+    el("line", { x1: m.l, x2: m.l + pw, y1: y(v), y2: y(v), class: v ? "gridline" : "baseline" }, svg);
+    el("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, svg, v.toLocaleString(undefined, { minimumFractionDigits: sc.decimals, maximumFractionDigits: sc.decimals }));
+  }
+  const step = windowSecs <= 30 ? 5 : windowSecs <= 60 ? 15 : windowSecs <= 120 ? 30 : 60;
+  for (let s = 0; s <= windowSecs; s += step) el("text", { x: x(now - s), y: H - 3, "text-anchor": s === 0 ? "end" : "middle", class: "tick" }, svg, s === 0 ? "now" : `−${s}s`);
+  if (c.markers) {
+    let lastX = -1e9;
+    for (const seg of segments) {
+      if (seg.start < t0 || seg.start > now) continue;
+      const xx = x(seg.start);
+      el("line", { x1: xx, x2: xx, y1: m.t - 4, y2: m.t + ph, class: "marker" }, svg);
+      if (xx - lastX > 100) { el("text", { x: xx + 4, y: m.t - 5, class: "marker-label" }, svg, seg.label.length > 28 ? seg.label.slice(0, 27) + "…" : seg.label); lastX = xx; }
+    }
+  }
+  if (!vis.length) el("text", { x: m.l + pw / 2, y: m.t + ph / 2, "text-anchor": "middle", class: "empty" }, svg, running ? "Waiting for the first samples…" : "Press Space or pick a preset");
+  // per series: raw samples, plus the same time-based moving average as the live numbers
+  const ends = [];
+  c.data = {};
+  for (const se of c.series) {
+    const pts = [];
+    let prev = null;
+    for (const p of vis) {
+      if (p.side !== se.side || p[se.key] == null) continue;
+      const gap = !prev || p.ts - prev.ts > 2.6 || p.seg !== prev.seg;
+      const v = gap ? p[se.key] : prev.v + smoothAlpha(p.ts - prev.ts) * (p[se.key] - prev.v);
+      prev = { ts: p.ts, raw: p[se.key], v, gap, est: p.est, loss: p.loss, seg: p.seg };
+      if (p.ts >= t0) pts.push(prev);
+    }
+    c.data[se.name] = pts;
+    const path = (key) => pts.map((q, i) => `${i === 0 || q.gap ? "M" : "L"}${x(q.ts).toFixed(1)},${y(q[key]).toFixed(1)}`).join("");
+    if (pts.length) {
+      if (smoothTau > 0) el("path", { d: path("raw"), class: "line raw", stroke: se.color }, svg);
+      el("path", { d: path("v"), class: "line", stroke: se.color }, svg);
+    }
+    const last = pts[pts.length - 1];
+    if (last && now - last.ts < 3.5) ends.push({ se, v: last.v, yy: y(last.v), xx: x(last.ts) });
+  }
+  ends.sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < ends.length; i++) if (ends[i].yy - ends[i - 1].yy < 14) ends[i].yy = ends[i - 1].yy + 14;
+  for (const e of ends) { el("circle", { cx: e.xx, cy: y(e.v), r: 4, fill: e.se.color, stroke: "var(--surface)", "stroke-width": 2 }, svg); el("text", { x: m.l + pw + 8, y: e.yy + 4, class: "endlabel" }, svg, e.se.fmt(e.v)); }
+  if (c.hover != null) drawHover(c, svg, now, vis);
+}
+function drawHover(c, svg, now, vis) {
+  const g = c.geom, tip = c.box.querySelector(".tip");
+  if (c.hover < g.m.l || c.hover > g.m.l + g.pw) { tip.style.display = "none"; return; }
+  const ts = g.t0 + (c.hover - g.m.l) / g.pw * windowSecs, rows = [];
+  el("line", { x1: c.hover, x2: c.hover, y1: g.m.t, y2: g.m.t + g.ph, class: "cross" }, svg);
+  for (const se of c.series) {
+    let best = null;
+    for (const q of (c.data && c.data[se.name]) || []) if (!best || Math.abs(q.ts - ts) < Math.abs(best.ts - ts)) best = q;
+    if (!best || Math.abs(best.ts - ts) > 1.6) continue;
+    el("circle", { cx: g.x(best.ts), cy: g.y(best.v), r: 4.5, fill: se.color, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+    const approx = best.est && se.key === "pps" ? "≈" : "";
+    const extra = se.side === "recv" && best.loss != null && c === charts.tp ? ` · loss ${best.loss.toFixed(1)}%` : "";
+    const raw = smoothTau > 0 ? ` <span class="muted" style="font-weight:500">(sample ${approx}${se.fmt(best.raw)})</span>` : "";
+    rows.push(`<div class="r"><span><i class="swatch" style="background:${se.color}"></i>${se.name}</span><b>${approx}${se.fmt(best.v)} ${se.unit}${raw}${extra}</b></div>`);
+  }
+  if (!rows.length) { tip.style.display = "none"; return; }
+  const seg = [...segments].reverse().find((s) => s.start <= ts);
+  tip.innerHTML = `<div class="t">${Math.max(0, now - ts).toFixed(1)} s ago${seg ? " · " + esc(seg.label) : ""}</div>${rows.join("")}`;
+  tip.style.display = "block";
+  const tw = tip.offsetWidth;
+  tip.style.left = `${c.hover + 14 + tw > c.box.clientWidth ? c.hover - tw - 14 : c.hover + 14}px`; tip.style.top = "4px";
+}
+for (const c of Object.values(charts)) {
+  c.box.addEventListener("pointermove", (e) => { c.hover = e.clientX - c.box.getBoundingClientRect().left; drawChart(c, Date.now() / 1000); });
+  c.box.addEventListener("pointerleave", () => { c.hover = null; c.box.querySelector(".tip").style.display = "none"; drawChart(c, Date.now() / 1000); });
+}
+function drawCharts() { const now = Date.now() / 1000; for (const c of Object.values(charts)) drawChart(c, now); }
+new ResizeObserver(drawCharts).observe($("drawer"));
+setInterval(() => {
+  drawCharts(); updateKpis(); renderJourney(); drawTopoLive(); if (running) renderTable();
+  if (selection && selection.kind === "link") renderInspect(false);
+}, 250);
+
+/* ---------- start-up ---------- */
+function afterState() {
+  $("banner").classList.toggle("show", !lab);
+  if (!lab) return;
+  if (!lab.topology) {
+    $("banner").classList.add("show"); $("start-lab").style.display = "none";
+    $("banner-text").innerHTML = "This page is newer than the running <code>lab_ui.py</code>: stop it with Ctrl+C and start it again, then reload.";
+    setStatus("err", "Restart lab_ui.py"); syncControls(); return;
+  }
+  $("start-lab").style.display = "";
+  const stopped = Object.values(lab.rows).filter((r) => !r.running);
+  if (stopped.length) { $("banner").classList.add("show"); $("banner-text").textContent = `Some lab nodes are stopped (${stopped.map((r) => r.name).join(", ")} path).`; }
+  if (lab.active) { running = true; active = lab.active; Object.assign(ui, lab.active); } else if (lab.focus) ui.row = lab.focus;
+  setStatus(running ? "live" : "", statusText());
+  syncControls(); drawTopo(); renderRouter(); renderJourney(); renderInspect(true);
+}
+async function refreshState() {
+  try {
+    const st = await api("/api/state");
+    if (!st.topology) return;
+    lab = st;
+    $("banner").classList.toggle("show", Object.values(lab.rows).some((r) => !r.running));
+    if (!Object.values(lab.rows).some((r) => !r.running)) $("banner").classList.remove("show");
+    drawTopo(); syncControls();
+    if (selection && selection.kind === "node") {
+      const n = nodeById(selection.id);
+      if (n && $("term-btn") && !termSession) { $("term-btn").disabled = n.status !== "started"; }
+    }
+  } catch (e) { /* the event stream reports problems */ }
+}
+async function init() {
+  setSeg("window", windowSecs); setSeg("smooth", smoothTau); setDrawer(1); showDrawer("charts"); syncControls(); renderInspect(true);
+  try { lab = await api("/api/state"); } catch (e) { lab = null; $("banner-text").textContent = e.message; setStatus("err", "Lab not reachable"); }
+  afterState();
+  const es = new EventSource("/api/events");
+  es.onmessage = (m) => handle(JSON.parse(m.data));
+  es.onerror = () => { if (!running) setStatus("err", "Reconnecting to lab_ui.py…"); };
+  es.onopen = () => { if (lab && lab.topology && !running) setStatus("", "Idle"); };
+  setInterval(refreshState, 5000);
+}
+init();
+</script>
+</body>
+</html>

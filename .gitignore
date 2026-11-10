@@ -6,3 +6,4 @@ sysroot
 *.d
 qemu_*.log
 qemu_*.pcap
+__pycache__
