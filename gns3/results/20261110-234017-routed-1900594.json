@@ -1,0 +1,794 @@
+{
+ "version": 1,
+ "created": "2026-11-10T23:36:06",
+ "label": "+ 256-slot RX ring",
+ "path": "Routed",
+ "row": "1",
+ "router": "R-routed",
+ "cmdline": "eth0=10.1.1.1/24 eth1=10.1.2.1/24 http",
+ "settings": {
+  "sizes": [
+   64,
+   128,
+   256,
+   512,
+   1024,
+   1280,
+   1518
+  ],
+  "trial_s": 3,
+  "loss_pct": 0.1,
+  "max_pps": 50000,
+  "precision": 0.02
+ },
+ "results": [
+  {
+   "frame": 64,
+   "payload": 18,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49999,
+     "delivered_pps": 13376,
+     "loss_pct": 73.217,
+     "cpu_pct": null,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 7022,
+     "sent_pps": 7022,
+     "delivered_pps": 6892,
+     "loss_pct": 1.861,
+     "cpu_pct": 51.5,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 3511,
+     "sent_pps": 3511,
+     "delivered_pps": 3511,
+     "loss_pct": 0,
+     "cpu_pct": 46.1,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5267,
+     "sent_pps": 5267,
+     "delivered_pps": 5267,
+     "loss_pct": 0,
+     "cpu_pct": 31.2,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 6145,
+     "sent_pps": 6145,
+     "delivered_pps": 6145,
+     "loss_pct": 0,
+     "cpu_pct": 45.5,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 6584,
+     "sent_pps": 6583,
+     "delivered_pps": 6583,
+     "loss_pct": 0,
+     "cpu_pct": 51.0,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 6803,
+     "sent_pps": 6803,
+     "delivered_pps": 6690,
+     "loss_pct": 1.656,
+     "cpu_pct": 65.4,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 6693,
+     "sent_pps": 6693,
+     "delivered_pps": 6623,
+     "loss_pct": 1.051,
+     "cpu_pct": 48.3,
+     "sender_limited": false,
+     "pass": false
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 6584,
+     "sent_pps": 6584,
+     "delivered_pps": 6584,
+     "loss_pct": 0,
+     "cpu_pct": 43.9,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.348,
+      "avg_ms": 1.797,
+      "max_ms": 17.557
+     }
+    }
+   ],
+   "throughput_pps": 6584,
+   "delivered_pps": 6584,
+   "throughput_mbps": 3.371,
+   "loss_pct": 0,
+   "cpu_pct": 43.9,
+   "rtt": {
+    "min_ms": 0.348,
+    "avg_ms": 1.797,
+    "max_ms": 17.557
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  },
+  {
+   "frame": 128,
+   "payload": 82,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 11931,
+     "loss_pct": 76.101,
+     "cpu_pct": null,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 6264,
+     "sent_pps": 6264,
+     "delivered_pps": 6264,
+     "loss_pct": 0,
+     "cpu_pct": 34.1,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 9396,
+     "sent_pps": 9395,
+     "delivered_pps": 8991,
+     "loss_pct": 4.303,
+     "cpu_pct": 45.4,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 7830,
+     "sent_pps": 7829,
+     "delivered_pps": 7829,
+     "loss_pct": 0,
+     "cpu_pct": 40.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 8613,
+     "sent_pps": 8612,
+     "delivered_pps": 8612,
+     "loss_pct": 0,
+     "cpu_pct": 51.1,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 9004,
+     "sent_pps": 9004,
+     "delivered_pps": 8957,
+     "loss_pct": 0.518,
+     "cpu_pct": 47.9,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 8808,
+     "sent_pps": 8808,
+     "delivered_pps": 8808,
+     "loss_pct": 0,
+     "cpu_pct": 44.9,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 8906,
+     "sent_pps": 8906,
+     "delivered_pps": 8690,
+     "loss_pct": 2.425,
+     "cpu_pct": 45.2,
+     "sender_limited": false,
+     "pass": false
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 8808,
+     "sent_pps": 8807,
+     "delivered_pps": 8801,
+     "loss_pct": 0.072,
+     "cpu_pct": 66.4,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.448,
+      "avg_ms": 8.764,
+      "max_ms": 53.409
+     }
+    }
+   ],
+   "throughput_pps": 8808,
+   "delivered_pps": 8801,
+   "throughput_mbps": 9.019,
+   "loss_pct": 0.072,
+   "cpu_pct": 66.4,
+   "rtt": {
+    "min_ms": 0.448,
+    "avg_ms": 8.764,
+    "max_ms": 53.409
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  },
+  {
+   "frame": 256,
+   "payload": 210,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 9041,
+     "loss_pct": 81.866,
+     "cpu_pct": null,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 4747,
+     "sent_pps": 4746,
+     "delivered_pps": 4746,
+     "loss_pct": 0,
+     "cpu_pct": 38.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 7120,
+     "sent_pps": 7119,
+     "delivered_pps": 6684,
+     "loss_pct": 6.113,
+     "cpu_pct": 28.9,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5933,
+     "sent_pps": 5933,
+     "delivered_pps": 5907,
+     "loss_pct": 0.427,
+     "cpu_pct": 49.2,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5340,
+     "sent_pps": 5340,
+     "delivered_pps": 5340,
+     "loss_pct": 0,
+     "cpu_pct": 35.9,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5636,
+     "sent_pps": 5636,
+     "delivered_pps": 5578,
+     "loss_pct": 1.041,
+     "cpu_pct": 52.8,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5488,
+     "sent_pps": 5488,
+     "delivered_pps": 5472,
+     "loss_pct": 0.291,
+     "cpu_pct": 44.3,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5414,
+     "sent_pps": 5414,
+     "delivered_pps": 5414,
+     "loss_pct": 0,
+     "cpu_pct": 34.7,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 5414,
+     "sent_pps": 5414,
+     "delivered_pps": 5414,
+     "loss_pct": 0,
+     "cpu_pct": 43.5,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.401,
+      "avg_ms": 1.871,
+      "max_ms": 15.391
+     }
+    }
+   ],
+   "throughput_pps": 5414,
+   "delivered_pps": 5414,
+   "throughput_mbps": 11.088,
+   "loss_pct": 0,
+   "cpu_pct": 43.5,
+   "rtt": {
+    "min_ms": 0.401,
+    "avg_ms": 1.871,
+    "max_ms": 15.391
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  },
+  {
+   "frame": 512,
+   "payload": 466,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 10154,
+     "loss_pct": 79.569,
+     "cpu_pct": null,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5331,
+     "sent_pps": 5331,
+     "delivered_pps": 5331,
+     "loss_pct": 0,
+     "cpu_pct": 31.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 7996,
+     "sent_pps": 7996,
+     "delivered_pps": 7996,
+     "loss_pct": 0,
+     "cpu_pct": 34.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 9329,
+     "sent_pps": 9329,
+     "delivered_pps": 8480,
+     "loss_pct": 9.1,
+     "cpu_pct": 57.2,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 8663,
+     "sent_pps": 8662,
+     "delivered_pps": 8427,
+     "loss_pct": 2.712,
+     "cpu_pct": 44.5,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 8329,
+     "sent_pps": 8329,
+     "delivered_pps": 8329,
+     "loss_pct": 0,
+     "cpu_pct": 50.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 8496,
+     "sent_pps": 8496,
+     "delivered_pps": 7997,
+     "loss_pct": 5.868,
+     "cpu_pct": 57.8,
+     "sender_limited": false,
+     "pass": false
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 8329,
+     "sent_pps": 8329,
+     "delivered_pps": 7460,
+     "loss_pct": 10.433,
+     "cpu_pct": 83.8,
+     "sender_limited": false,
+     "pass": false,
+     "rtt": {
+      "min_ms": 0.514,
+      "avg_ms": 28.536,
+      "max_ms": 103.632
+     }
+    },
+    {
+     "target_pps": 7913,
+     "sent_pps": 7912,
+     "delivered_pps": 7611,
+     "loss_pct": 3.635,
+     "cpu_pct": 79.5,
+     "sender_limited": false,
+     "pass": false,
+     "rtt": {
+      "min_ms": 0.55,
+      "avg_ms": 17.999,
+      "max_ms": 81.9
+     }
+    },
+    {
+     "target_pps": 7517,
+     "sent_pps": 7516,
+     "delivered_pps": 6968,
+     "loss_pct": 7.292,
+     "cpu_pct": 66.7,
+     "sender_limited": false,
+     "pass": false,
+     "rtt": {
+      "min_ms": 0.465,
+      "avg_ms": 21.387,
+      "max_ms": 109.146
+     }
+    }
+   ],
+   "throughput_pps": 0,
+   "throughput_mbps": 0,
+   "unconfirmed": true
+  },
+  {
+   "frame": 1024,
+   "payload": 978,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 7753,
+     "loss_pct": 84.481,
+     "cpu_pct": 100.0,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 4070,
+     "sent_pps": 4070,
+     "delivered_pps": 4062,
+     "loss_pct": 0.196,
+     "cpu_pct": 44.5,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 2035,
+     "sent_pps": 2035,
+     "delivered_pps": 2035,
+     "loss_pct": 0,
+     "cpu_pct": 19.2,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 3053,
+     "sent_pps": 3053,
+     "delivered_pps": 3053,
+     "loss_pct": 0,
+     "cpu_pct": 30.7,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 3562,
+     "sent_pps": 3562,
+     "delivered_pps": 3562,
+     "loss_pct": 0,
+     "cpu_pct": 21.9,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 3816,
+     "sent_pps": 3816,
+     "delivered_pps": 3816,
+     "loss_pct": 0,
+     "cpu_pct": 45.2,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 3943,
+     "sent_pps": 3943,
+     "delivered_pps": 3943,
+     "loss_pct": 0,
+     "cpu_pct": 26.6,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 4007,
+     "sent_pps": 4007,
+     "delivered_pps": 4007,
+     "loss_pct": 0,
+     "cpu_pct": 27.6,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 4007,
+     "sent_pps": 4007,
+     "delivered_pps": 4007,
+     "loss_pct": 0,
+     "cpu_pct": 51.4,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.8,
+      "avg_ms": 3.191,
+      "max_ms": 23.472
+     }
+    }
+   ],
+   "throughput_pps": 4007,
+   "delivered_pps": 4007,
+   "throughput_mbps": 32.825,
+   "loss_pct": 0,
+   "cpu_pct": 51.4,
+   "rtt": {
+    "min_ms": 0.8,
+    "avg_ms": 3.191,
+    "max_ms": 23.472
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  },
+  {
+   "frame": 1280,
+   "payload": 1234,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49996,
+     "delivered_pps": 11848,
+     "loss_pct": 76.303,
+     "cpu_pct": 75.5,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 6220,
+     "sent_pps": 6220,
+     "delivered_pps": 5961,
+     "loss_pct": 4.163,
+     "cpu_pct": 77.8,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 3110,
+     "sent_pps": 3110,
+     "delivered_pps": 3110,
+     "loss_pct": 0,
+     "cpu_pct": 39.7,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 4665,
+     "sent_pps": 4665,
+     "delivered_pps": 4665,
+     "loss_pct": 0,
+     "cpu_pct": 44.0,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5443,
+     "sent_pps": 5442,
+     "delivered_pps": 5442,
+     "loss_pct": 0,
+     "cpu_pct": 61.2,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5831,
+     "sent_pps": 5831,
+     "delivered_pps": 5831,
+     "loss_pct": 0,
+     "cpu_pct": 52.1,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 6026,
+     "sent_pps": 6026,
+     "delivered_pps": 5520,
+     "loss_pct": 8.395,
+     "cpu_pct": 59.8,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5929,
+     "sent_pps": 5928,
+     "delivered_pps": 5928,
+     "loss_pct": 0,
+     "cpu_pct": 45.8,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 5929,
+     "sent_pps": 5929,
+     "delivered_pps": 5929,
+     "loss_pct": 0,
+     "cpu_pct": 39.7,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.431,
+      "avg_ms": 1.258,
+      "max_ms": 20.341
+     }
+    }
+   ],
+   "throughput_pps": 5929,
+   "delivered_pps": 5929,
+   "throughput_mbps": 60.713,
+   "loss_pct": 0,
+   "cpu_pct": 39.7,
+   "rtt": {
+    "min_ms": 0.431,
+    "avg_ms": 1.258,
+    "max_ms": 20.341
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  },
+  {
+   "frame": 1518,
+   "payload": 1472,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 11445,
+     "loss_pct": 77.065,
+     "cpu_pct": 90.0,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 6009,
+     "sent_pps": 6009,
+     "delivered_pps": 5929,
+     "loss_pct": 1.314,
+     "cpu_pct": 41.4,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 3004,
+     "sent_pps": 3004,
+     "delivered_pps": 3004,
+     "loss_pct": 0,
+     "cpu_pct": 16.5,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 4506,
+     "sent_pps": 4506,
+     "delivered_pps": 4506,
+     "loss_pct": 0,
+     "cpu_pct": 23.2,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5258,
+     "sent_pps": 5257,
+     "delivered_pps": 5257,
+     "loss_pct": 0,
+     "cpu_pct": 22.4,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5633,
+     "sent_pps": 5633,
+     "delivered_pps": 5633,
+     "loss_pct": 0,
+     "cpu_pct": 25.8,
+     "sender_limited": false,
+     "pass": true
+    },
+    {
+     "target_pps": 5821,
+     "sent_pps": 5821,
+     "delivered_pps": 5647,
+     "loss_pct": 2.983,
+     "cpu_pct": 30.4,
+     "sender_limited": false,
+     "pass": false
+    },
+    {
+     "target_pps": 5727,
+     "sent_pps": 5727,
+     "delivered_pps": 5727,
+     "loss_pct": 0,
+     "cpu_pct": 31.4,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 5727,
+     "sent_pps": 5727,
+     "delivered_pps": 5727,
+     "loss_pct": 0,
+     "cpu_pct": 29.4,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.352,
+      "avg_ms": 0.993,
+      "max_ms": 10.304
+     }
+    }
+   ],
+   "throughput_pps": 5727,
+   "delivered_pps": 5727,
+   "throughput_mbps": 69.549,
+   "loss_pct": 0,
+   "cpu_pct": 29.4,
+   "rtt": {
+    "min_ms": 0.352,
+    "avg_ms": 0.993,
+    "max_ms": 10.304
+   },
+   "sender_limited": false,
+   "limited_by_max": false
+  }
+ ],
+ "kernel": {
+  "git_commit": "1900594",
+  "git_dirty": false,
+  "kernel_image": "LazyDaysOS-1900594.bin",
+  "optimization": "-O0",
+  "kernel_sha256": "1f4e8d972f2473ee",
+  "kernel_installed": 1794337209.1868827,
+  "router_booted": 1794339358.7940705,
+  "router_older_than_install": false
+ },
+ "idle_rtt": {
+  "min_ms": 1.533,
+  "avg_ms": 4.41,
+  "max_ms": 47.715
+ },
+ "duration_s": 252
+}
