@@ -77,7 +77,8 @@ static const uint16_t e1000$supported[] = {
 #define DESC_STATUS_DD      (1u << 0)   /* descriptor done */
 #define RXD_STATUS_EOP      (1u << 1)
 
-#define RX_RING_SIZE        32          /* ring byte size must be a multiple of 128 */
+#define RX_RING_SIZE        256         /* ring byte size must be a multiple of 128; ~25 ms of
+                                           buffering at 10k packets/s (32 slots: ~3 ms) */
 #define TX_RING_SIZE        32
 #define RX_BUFFER_SIZE      2048
 #define TX_BUFFER_SIZE      2048

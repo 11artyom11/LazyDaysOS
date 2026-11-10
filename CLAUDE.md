@@ -110,7 +110,7 @@ kernel/idt.c/.h            PIC remap (IRQ0-15 -> vectors 0x20-0x2F), IDT gates 0
 kernel/idt_hndlr_setup.s   ISR0-31 / IRQ0-15 stubs -> general_interrupt_handler -> interrupt_handler(struct int_frame*)
 kernel/isr.c/.h            EOI, dispatch through isr_map[], panic on unhandled CPU exceptions, isr_self_test
 kernel/panic.c/.h          k_panic / k_panic_frame: red register dump (+CR2 on #PF), then halt
-kernel/heap.c/.h           kmalloc/kfree: first-fit heap over 4 MiB of contiguous frames
+kernel/heap.c/.h           kmalloc/kfree: first-fit heap over 16 MiB of contiguous frames
 kernel/cpuload.h           generic CPU-load API: cpu_idle_wait, cpu_irq_disable/enable, busy share per second
 kernel/net/netdev.c/.h     driver-independent NIC interface: register, transmit, poll, rx handler, stats
 kernel/net/net.c/.h        stack entry (net_initialize, net_run_once), byte order, checksum, IP parsing/printing
@@ -140,7 +140,7 @@ kernel/compat/i386/        arch-specific:
   pit.c                      PIT channel 0 at 100 Hz, tick counter, pit_sleep_ms
   cpuload.c                  cpuload.h for x86: TSC around sti; hlt, one-second windows, self test
   pci.c                      PCI config mechanism #1, bus scan, BAR decode, pci_enable_device
-  e1000.c                    Intel 82540EM/82545EM driver: 32-entry RX/TX DMA rings, shared IRQ handler, MPC -> rx_missed
+  e1000.c                    Intel 82540EM/82545EM driver: 256-entry RX / 32-entry TX DMA rings, shared IRQ handler, MPC -> rx_missed
   include/multiboot.h        Multiboot v1 info / mmap structures
 libk/tty/tty.c             VGA text console 80x25 at 0xB8000 (terminal_*)
 libk/tty/serial.c          polled COM1 output, 115200 8N1

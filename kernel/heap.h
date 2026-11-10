@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MEM$HEAP_DEFAULT_SIZE   (4 * 1024 * 1024)
+#define MEM$HEAP_DEFAULT_SIZE   (16 * 1024 * 1024)  /* room for 8 ports with 256-slot receive rings */
 #define MEM$HEAP_ALIGN          16
 
 struct mem$heap_stats
