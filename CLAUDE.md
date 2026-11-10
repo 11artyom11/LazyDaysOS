@@ -20,7 +20,7 @@ LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T 
 
 ```bash
 make               # -> ./LazyDaysOS.bin (objects/archives land in the repo root)
-make check         # check_qemu.sh (in-kernel self tests) then check_net.sh (router tests against Linux); exit 0 = all passed
+make check         # check_qemu.sh (in-kernel self tests, TCG then KVM) then check_net.sh (router tests against Linux); exit 0 = all passed
 make install       # copies libk + headers + kernel into sysroot/, builds ISO, runs multiboot check
 ./bootit.sh        # qemu -kernel sysroot/boot/kernel/LazyDaysOS.bin, one e1000 on user networking, serial on this terminal
 ./bootit.sh --iso  # qemu -cdrom sysroot/boot/kernel/LazyDaysOS.iso (GRUB boots immediately)
@@ -30,7 +30,7 @@ make install       # copies libk + headers + kernel into sysroot/, builds ISO, r
 make clean
 ```
 
-- **Run `make check` after every kernel change.** It passes `test` on the kernel command line, and the kernel then reports its self-test result through QEMU's `isa-debug-exit` device (port `0xF4`): QEMU exit status 1 = pass, 3 = a test failed or the kernel panicked. `check_qemu.sh` prints the serial log (also saved to `qemu_check.log`) and also catches hangs (30 s timeout) and triple faults (`-no-reboot`). It attaches **two e1000 NICs** on separate QEMU user networks (slirp: 10.0.2.0/24 and 10.0.3.0/24), configures them from the command line (eth0 via QEMU's built-in DHCP server, eth1 statically) and pings each network's gateway from the kernel; traffic goes to `qemu_net0.pcap` / `qemu_net1.pcap` (read with `tcpdump -nn -e -r qemu_net0.pcap`).
+- **Run `make check` after every kernel change.** It passes `test` on the kernel command line, and the kernel then reports its self-test result through QEMU's `isa-debug-exit` device (port `0xF4`): QEMU exit status 1 = pass, 3 = a test failed or the kernel panicked. `check_qemu.sh` prints the serial log (also saved to `qemu_check.log`) and also catches hangs (30 s timeout) and triple faults (`-no-reboot`). It boots twice: with QEMU's software CPU (TCG) and, if `/dev/kvm` is usable, with **KVM** (`qemu_check_kvm.log`; `KVM=no` skips it). The second pass exists because TCG doesn't enforce everything real CPUs do: the kernel's GDT once ended at 256 MiB, which TCG ignored but KVM (and GNS3, which always uses KVM) turned into a #GP on the first e1000 register write. It attaches **two e1000 NICs** on separate QEMU user networks (slirp: 10.0.2.0/24 and 10.0.3.0/24), configures them from the command line (eth0 via QEMU's built-in DHCP server, eth1 statically) and pings each network's gateway from the kernel; traffic goes to `qemu_net0.pcap` / `qemu_net1.pcap` (read with `tcpdump -nn -e -r qemu_net0.pcap`).
 
 ### Kernel command line
 
@@ -79,6 +79,16 @@ qemu-system-i386 -kernel sysroot/boot/kernel/LazyDaysOS.bin -display none -no-re
 Then over the monitor socket: `sendkey <key>` to type (and `sendkey ret` to get past the GRUB menu for `-cdrom`), and `xp /2000hx 0xb8000` to dump the screen. Use the low byte of each cell as ASCII. Avoid long `-monitor unix:` paths (108-byte limit). `-d int -D log` traces interrupts.
 
 Add `-serial stdio` (or `-serial file:x.log`) to read the console text directly. A healthy boot prints `[K_INFO] Initializing IDT` … `[K_SUCC] self tests passed ... Done` → `[K_SUCC] getting kernel ready... Done`, then echoes typed lowercase letters, digits, space, and Enter (VGA only; keyboard echo is not mirrored to serial).
+
+### GNS3 lab (`gns3/`)
+
+The thesis test bench: LazyDaysOS in GNS3 between Docker hosts, measured live. Set up on this machine (see the user's memory for details); the pieces in the repo:
+
+- `gns3/throughput_lab.py` builds the GNS3 project "LazyDaysOS throughput" through the GNS3 2.2 API on `127.0.0.1:3080`: three rows (baseline with no router, `R-routed`, `R-nat`) of `nicolaka/netshoot` containers on **direct** links (GNS3's built-in switch is Dynamips and would be the bottleneck). It needs the `LazyDaysOS` QEMU template, which boots `sysroot/boot/kernel/LazyDaysOS.bin`, so `make install` + restarting the node picks up a new kernel.
+- `gns3/tests.sh`: iperf3 presets, installed in each client as `/lab/tests.sh`.
+- `gns3/lab_ui.py` (stdlib only) serves `gns3/lab_ui.html` on `http://localhost:8090`: live topology from GNS3, iperf3 from both ends at 0.1-1 s, the routers' `/api/stats` once a second (curl from the inside client, so routers need `http`), link conditions (GNS3 link filters), node start/stop, in-page consoles and link captures. The page is read from disk on every request, the Python only on restart. Only one `lab_ui.py` per lab: its startup kills leftover iperf3 processes in all lab containers.
+- Gotchas: the GNS3 client and server versions must match exactly (the Windows client here is 2.2.61; gns3.com still ships 2.2, 3.0 is on GitHub). GNS3 3.0 rejects the kernel as an image because it classifies 32-bit ELF files as Cisco IOU images. Docker nodes need a *statically linked* BusyBox on the server's PATH (or in `~/.local/share/GNS3/docker/bin/`). GNS3 gives container interfaces MTU 65521, which kills ubridge links ("send: Message too long"); the builder sets 1500. GNS3 puts QEMU NICs behind a PCI bridge (the 256-bus scan finds them). VPCS sets `ciaddr` in DHCPREQUEST while sending from 0.0.0.0, which is why the DHCP server only unicasts when `ciaddr` equals the source.
+- Measured baseline (KVM, `-O0` build): GNS3 links carry ~3.6 Gbit/s; a LazyDaysOS router tops out at ~12-14k packets/s regardless of packet size (per-packet cost), NAT costs ~3%, and TCP's ACKs count against the same budget.
 
 ## Build layout (Makefile)
 
