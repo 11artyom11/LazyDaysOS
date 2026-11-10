@@ -38,6 +38,7 @@ static const uint16_t e1000$supported[] = {
 #define REG_TDLEN           0x3808
 #define REG_TDH             0x3810
 #define REG_TDT             0x3818
+#define REG_MPC             0x4010      /* missed packets count, clears on read */
 #define REG_MTA             0x5200      /* multicast table, 128 entries */
 #define REG_RAL0            0x5400
 #define REG_RAH0            0x5404
@@ -184,6 +185,7 @@ static bool e1000$$init_rx(struct e1000$port* port)
     e1000$$write(port, REG_RDLEN, sizeof(struct e1000$rx_desc) * RX_RING_SIZE);
     e1000$$write(port, REG_RDH, 0);
     e1000$$write(port, REG_RDT, RX_RING_SIZE - 1);  /* all but one descriptor owned by hardware */
+    (void)e1000$$read(port, REG_MPC);                /* start the missed-packet count from zero */
     port->rx_next = 0;
 
     e1000$$write(port, REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
@@ -248,6 +250,9 @@ static size_t e1000$$poll(struct netdev* dev, size_t budget)
 {
     struct e1000$port* port = dev->priv;
     size_t done = 0;
+
+    /* Frames the NIC dropped because every receive buffer was full (the ring overflowed) */
+    dev->stats.rx_missed += e1000$$read(port, REG_MPC);
 
     while (done < budget) {
         volatile struct e1000$rx_desc* desc = &port->rx_ring[port->rx_next];

@@ -10,6 +10,7 @@
 #include "tcp.h"
 #include "http.h"
 #include "api.h"
+#include "../cpuload.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -306,6 +307,7 @@ void net_run_once(void)
         dhcp_server_tick(now);
         nat_tick(now);
         tcp_tick(now);
+        cpu_load_tick(now);
         http_tick(now);
     }
     netdev_run_once();

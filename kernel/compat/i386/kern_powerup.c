@@ -5,6 +5,7 @@
 #include <pit.h>
 #include <kio.h>
 #include "../../gdt.h"
+#include "../../cpuload.h"
 #include "../../heap.h"
 #include "../../hwio.h"
 #include "../../isr.h"
@@ -94,6 +95,11 @@ size_t kern$self_test(void)
 
 	k_print("[K_INFO] .........  Test pit_self_test()\n");
 	if ((status = pit_self_test()) != UTIL$SUCCESS) {
+		return status;
+	}
+
+	k_print("[K_INFO] .........  Test cpu_load_self_test()\n");
+	if ((status = cpu_load_self_test()) != UTIL$SUCCESS) {
 		return status;
 	}
 

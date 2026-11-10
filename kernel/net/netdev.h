@@ -38,6 +38,7 @@ struct netdev_stats
     uint32_t rx_packets;
     uint32_t rx_bytes;
     uint32_t rx_dropped;                /* no handler, bad length, or driver errors */
+    uint32_t rx_missed;                 /* dropped by the NIC itself: no free receive buffer (ring full) */
     uint32_t tx_packets;
     uint32_t tx_bytes;
     uint32_t tx_dropped;                /* ring full or bad length */

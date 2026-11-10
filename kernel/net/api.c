@@ -13,6 +13,7 @@
 #include <pit.h>
 #include "../heap.h"
 #include "../system.h"
+#include "../cpuload.h"
 
 /* www/index.html, gzipped by the Makefile and linked in with ld -b binary */
 extern const uint8_t _binary_dashboard_html_gz_start[];
@@ -96,6 +97,7 @@ static void api$$interfaces(struct strbuf* sb)
         api$$key_uint(sb, "rx_packets", dev->stats.rx_packets, false);
         api$$key_uint(sb, "rx_bytes", dev->stats.rx_bytes, false);
         api$$key_uint(sb, "rx_dropped", dev->stats.rx_dropped, false);
+        api$$key_uint(sb, "rx_missed", dev->stats.rx_missed, false);
         api$$key_uint(sb, "tx_packets", dev->stats.tx_packets, false);
         api$$key_uint(sb, "tx_bytes", dev->stats.tx_bytes, false);
         api$$key_uint(sb, "tx_dropped", dev->stats.tx_dropped, false);
@@ -123,6 +125,13 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "ready_ms", system_ready_ms, false);
     api$$key_uint(&sb, "heap_size", heap.hs$size, false);
     api$$key_uint(&sb, "heap_used", heap.hs$used, false);
+    sb_char(&sb, '}');
+
+    /* Busy share of the last second (permille) and total idle time */
+    sb_json_key(&sb, "cpu", false);
+    sb_char(&sb, '{');
+    api$$key_uint(&sb, "busy_permille", cpu_load_busy_permille(), true);
+    api$$key_uint(&sb, "idle_ms", cpu_load_idle_ms(), false);
     sb_char(&sb, '}');
 
     sb_json_key(&sb, "interfaces", false);

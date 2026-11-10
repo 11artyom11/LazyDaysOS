@@ -1,4 +1,5 @@
 #include "netdev.h"
+#include "../cpuload.h"
 #include <kio.h>
 
 static struct netdev netdev$devices[NETDEV_MAX];
@@ -110,14 +111,15 @@ static void netdev$$poll_all(void)
 
 void netdev_run_once(void)
 {
-    /* Check and sleep atomically: "sti; hlt" lets an interrupt arriving after
-       the check still wake the hlt instead of being missed until the next tick */
-    asm volatile("cli");
+    /* Check and sleep atomically: cpu_idle_wait() re-enables interrupts and sleeps
+       in one step, so an interrupt arriving after the check still wakes it instead
+       of being missed until the next tick. The sleep is what counts as CPU idle. */
+    cpu_irq_disable();
     if (netdev$work_pending) {
-        asm volatile("sti");
+        cpu_irq_enable();
         netdev$$poll_all();
     } else {
-        asm volatile("sti; hlt");
+        cpu_idle_wait();
     }
 }
 

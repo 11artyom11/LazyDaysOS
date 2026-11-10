@@ -518,6 +518,25 @@ print('missing %s in %s' % (missing, texts[:300]) if missing else 'logged')"
     last=$(python3 -c "import json; print(json.load(open('$TMP/events.json'))[-1]['id'])")
     check_output "/api/events?since=<last id> returns nothing new" "^\[\]$" curl -s --max-time 5 "$API/api/events?since=$last"
 
+    # CPU load (time not spent asleep in hlt, per one-second window): low after a quiet
+    # second, clearly higher while a ping flood is forwarded through the NAT
+    check_output "/api/stats CPU load: low when idle, higher under a forwarded ping flood" "^tracks load " \
+        python3 - "$API" "$WAN_HOST" <<'PY'
+import json, subprocess, sys, time, urllib.request
+api, target = sys.argv[1], sys.argv[2]
+stats = lambda: json.load(urllib.request.urlopen(api + '/api/stats', timeout=5))
+time.sleep(2.2)                       # a whole window with nothing but this request in it
+idle = stats()['cpu']['busy_permille']
+flood = subprocess.Popen(['ping', '-f', '-q', '-s', '1000', '-w', '4', target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(2.5)
+busy = stats()['cpu']['busy_permille']
+flood.wait()
+s = stats()
+ok = idle < 300 and busy > idle + 150 and s['cpu']['idle_ms'] > 0 and all(isinstance(i.get('rx_missed'), int) for i in s['interfaces'])
+print(('tracks load (' if ok else 'wrong: ') + 'idle %d, under flood %d permille; idle_ms %d; rx_missed %s'
+      % (idle, busy, s['cpu']['idle_ms'], [i.get('rx_missed') for i in s['interfaces']]) + (')' if ok else ''))
+PY
+
     check_ping "second LAN host reaches the WAN" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
     check_output "POST /api/block?ip=10.0.9.3" '"blocked":true' curl -s --max-time 5 -X POST "$API/api/block?ip=10.0.9.3"
     check_ping "blocked device can't reach the WAN" "100%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 1 $WAN_HOST
