@@ -31,6 +31,9 @@ struct netdev_ops
 
     /* Deliver up to budget received frames via netdev_receive(); returns how many */
     size_t (*poll)(struct netdev* dev, size_t budget);
+    /* Optional: hand queued transmits to the hardware. Drivers may batch them (one doorbell
+       write per batch instead of per frame); the stack flushes before polling again or sleeping */
+    void (*flush)(struct netdev* dev);
 };
 
 struct netdev_stats
@@ -53,6 +56,7 @@ struct netdev
     void* priv;                         /* driver state */
     struct netdev_stats stats;
     volatile bool rx_pending;
+    bool tx_unflushed;                  /* transmits since the last flush */
 };
 
 typedef void (*netdev_rx_handler)(struct netdev* dev, const uint8_t* frame, size_t len);
@@ -75,7 +79,10 @@ void netdev_receive(struct netdev* dev, const uint8_t* frame, size_t len);
 /* Driver side: called from the IRQ handler when frames are waiting */
 void netdev_mark_pending(struct netdev* dev);
 
-/* One idle-loop step: poll devices with pending work, otherwise hlt until the next interrupt */
+/* Make every queued transmit visible to the hardware (called by netdev_run_once) */
+void netdev_flush_all(void);
+
+/* One idle-loop step: flush transmits, then poll devices with pending work, otherwise hlt until the next interrupt */
 void netdev_run_once(void);
 
 void netdev_print_mac(const uint8_t mac[ETH_ALEN]);

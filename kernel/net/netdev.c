@@ -66,7 +66,21 @@ bool netdev_transmit(struct netdev* dev, const void* frame, size_t len)
     }
     dev->stats.tx_packets++;
     dev->stats.tx_bytes += len;
+    dev->tx_unflushed = true;
     return true;
+}
+
+void netdev_flush_all(void)
+{
+    for (size_t i = 0; i < netdev$count; i++) {
+        struct netdev* dev = &netdev$devices[i];
+        if (dev->tx_unflushed) {
+            dev->tx_unflushed = false;
+            if (dev->ops->flush) {
+                dev->ops->flush(dev);
+            }
+        }
+    }
 }
 
 netdev_rx_handler netdev_set_rx_handler(netdev_rx_handler handler)
@@ -111,6 +125,10 @@ static void netdev$$poll_all(void)
 
 void netdev_run_once(void)
 {
+    /* Everything sent since the last step (the previous poll round, protocol timers) goes out now,
+       as one batch per device, before polling again or sleeping */
+    netdev_flush_all();
+
     /* Check and sleep atomically: cpu_idle_wait() re-enables interrupts and sleeps
        in one step, so an interrupt arriving after the check still wakes it instead
        of being missed until the next tick. The sleep is what counts as CPU idle. */

@@ -80,6 +80,7 @@ static const uint16_t e1000$supported[] = {
 #define RX_RING_SIZE        256         /* ring byte size must be a multiple of 128; ~25 ms of
                                            buffering at 10k packets/s (32 slots: ~3 ms) */
 #define TX_RING_SIZE        32
+#define TX_FLUSH_BATCH      16          /* doorbell at the latest after this many queued frames */
 #define RX_BUFFER_SIZE      2048
 #define TX_BUFFER_SIZE      2048
 #define E1000_MAX_PORTS     NETDEV_MAX
@@ -116,6 +117,7 @@ struct e1000$port
     uint8_t* tx_buffers[TX_RING_SIZE];
     uint32_t rx_next;                   /* next descriptor the hardware will fill */
     uint32_t tx_next;                   /* next descriptor we will hand to the hardware */
+    uint32_t tx_queued;                 /* filled since the last TDT write (doorbell) */
 };
 
 static struct e1000$port e1000$ports[E1000_MAX_PORTS];
@@ -215,10 +217,21 @@ static bool e1000$$init_tx(struct e1000$port* port)
     e1000$$write(port, REG_TDH, 0);
     e1000$$write(port, REG_TDT, 0);
     port->tx_next = 0;
+    port->tx_queued = 0;
 
     e1000$$write(port, REG_TCTL, TCTL_EN | TCTL_PSP | (0x0F << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT));
     e1000$$write(port, REG_TIPG, TIPG_DEFAULT);
     return true;
+}
+
+/* Doorbell: one TDT write hands every queued descriptor to the hardware */
+static void e1000$$flush_tx(struct e1000$port* port)
+{
+    if (port->tx_queued) {
+        asm volatile("" ::: "memory");  /* descriptor writes must land before the tail bump */
+        e1000$$write(port, REG_TDT, port->tx_next);
+        port->tx_queued = 0;
+    }
 }
 
 static bool e1000$$transmit(struct netdev* dev, const void* frame, size_t len)
@@ -228,6 +241,7 @@ static bool e1000$$transmit(struct netdev* dev, const void* frame, size_t len)
 
     /* The hardware sets DD once it has sent the descriptor; until then the ring is full */
     if (!(desc->status & DESC_STATUS_DD)) {
+        e1000$$flush_tx(port);          /* let the hardware drain what is queued */
         return false;
     }
 
@@ -242,9 +256,17 @@ static bool e1000$$transmit(struct netdev* dev, const void* frame, size_t len)
     desc->status = 0;
 
     port->tx_next = (port->tx_next + 1) % TX_RING_SIZE;
-    asm volatile("" ::: "memory");      /* descriptor writes must land before the tail bump */
-    e1000$$write(port, REG_TDT, port->tx_next);
+    /* No doorbell per frame: every register write is a VM exit under virtualization.
+       netdev flushes before polling again or sleeping; a full batch rings it now. */
+    if (++port->tx_queued >= TX_FLUSH_BATCH) {
+        e1000$$flush_tx(port);
+    }
     return true;
+}
+
+static void e1000$$flush(struct netdev* dev)
+{
+    e1000$$flush_tx(dev->priv);
 }
 
 static size_t e1000$$poll(struct netdev* dev, size_t budget)
@@ -268,13 +290,15 @@ static size_t e1000$$poll(struct netdev* dev, size_t budget)
             dev->stats.rx_dropped++;
         }
 
-        /* Give the descriptor back: it becomes the new tail */
+        /* Give the descriptor back; the tail moves once per round, below */
         desc->status = 0;
-        uint32_t returned = port->rx_next;
         port->rx_next = (port->rx_next + 1) % RX_RING_SIZE;
-        asm volatile("" ::: "memory");
-        e1000$$write(port, REG_RDT, returned);
         done++;
+    }
+    if (done) {
+        /* One RDT write returns the whole batch (the last descriptor processed becomes the tail) */
+        asm volatile("" ::: "memory");
+        e1000$$write(port, REG_RDT, (port->rx_next + RX_RING_SIZE - 1) % RX_RING_SIZE);
     }
     return done;
 }
@@ -282,6 +306,7 @@ static size_t e1000$$poll(struct netdev* dev, size_t budget)
 static const struct netdev_ops e1000$ops = {
     .transmit = e1000$$transmit,
     .poll = e1000$$poll,
+    .flush = e1000$$flush,
 };
 
 /* Shared by all ports; reading ICR acknowledges and deasserts the interrupt */
