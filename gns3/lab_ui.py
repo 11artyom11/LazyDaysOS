@@ -143,6 +143,7 @@ class Lab:
                 "link_id": egress["link_id"], "filters": egress.get("filters") or {},
                 "running": all(n["status"] == "started" for n in members),
                 "http": bool(router and "http" in cmdline.split()),
+                "kernel_image": router["properties"].get("kernel_image") if router else None,
             }
         self.topology = {
             "nodes": [{"id": n["node_id"], "name": n["name"], "type": n["node_type"], "symbol": n["symbol"],
@@ -583,22 +584,32 @@ PING_RTT = re.compile(r"= ([\d.]+)/([\d.]+)/([\d.]+)")
 
 
 def kernel_info(row):
-    """What the router is running, as far as can be told: the repo commit, the -O level, the
-    installed kernel file, and whether the router booted before that file was installed."""
+    """What the router is running, as far as can be told. Normally its GNS3 kernel image is
+    LazyDaysOS.bin, a link to sysroot/: then the repo's HEAD and Makefile describe it, plus
+    whether the router booted before that file was installed. An image named
+    LazyDaysOS-<commit>.bin is a build of that commit (performance experiments)."""
     import hashlib
     git = lambda *a: subprocess.run(["git", "-C", REPO_DIR, *a], capture_output=True, text=True).stdout.strip()
-    info = {"git_commit": git("rev-parse", "--short", "HEAD"),
-            "git_dirty": bool(git("status", "--porcelain", "--", "kernel", "libk", "Makefile"))}
+    image = lab.rows[row].get("kernel_image") or "LazyDaysOS.bin"
+    pinned = re.match(r"^LazyDaysOS-([0-9a-f]{7,40})\.bin$", image)
+    kernel_file = os.path.expanduser(f"~/GNS3/images/QEMU/{image}") if pinned else KERNEL_FILE
+    if pinned:
+        info = {"git_commit": pinned.group(1), "git_dirty": False, "kernel_image": image}
+        makefile = git("show", f"{pinned.group(1)}:Makefile")
+    else:
+        info = {"git_commit": git("rev-parse", "--short", "HEAD"),
+                "git_dirty": bool(git("status", "--porcelain", "--", "kernel", "libk", "Makefile")), "kernel_image": image}
+        try:
+            with open(os.path.join(REPO_DIR, "Makefile")) as f:
+                makefile = f.read()
+        except OSError:
+            makefile = ""
+    m = re.search(r"^CFLAGS=.*?(-O\w)", makefile, re.M)
+    info["optimization"] = m.group(1) if m else None
     try:
-        with open(os.path.join(REPO_DIR, "Makefile")) as f:
-            m = re.search(r"^CFLAGS=.*?(-O\w)", f.read(), re.M)
-        info["optimization"] = m.group(1) if m else None
-    except OSError:
-        info["optimization"] = None
-    try:
-        with open(KERNEL_FILE, "rb") as f:
+        with open(kernel_file, "rb") as f:
             info["kernel_sha256"] = hashlib.sha256(f.read()).hexdigest()[:16]
-        info["kernel_installed"] = os.path.getmtime(KERNEL_FILE)
+        info["kernel_installed"] = os.path.getmtime(kernel_file)
     except OSError:
         info["kernel_sha256"] = info["kernel_installed"] = None
     stats = poller.last.get(row)
