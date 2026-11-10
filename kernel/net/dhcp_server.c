@@ -15,7 +15,9 @@
 
     Replies are broadcast unless the client already has an address (ciaddr):
     the RFC allows that, every client accepts it, and it avoids sending to a
-    MAC whose IP isn't configured yet.
+    MAC whose IP isn't configured yet. "Has an address" means the request also
+    came from ciaddr: some clients (GNS3's VPCS) fill in ciaddr while still
+    sending from 0.0.0.0, and would never answer the ARP for a unicast ACK.
 */
 
 #define DHCPS_MAX_POOLS         4
@@ -120,7 +122,9 @@ static struct dhcps$lease* dhcps$$choose(struct dhcps$pool* pool, const uint8_t*
     return NULL;
 }
 
-static void dhcps$$reply(struct dhcps$pool* pool, const struct dhcp_message* req, uint8_t type, uint32_t yiaddr)
+/* src_ip is the IPv4 source of the request: unicast only to a client that already uses ciaddr */
+static void dhcps$$reply(struct dhcps$pool* pool, const struct dhcp_message* req, uint32_t src_ip,
+                         uint8_t type, uint32_t yiaddr)
 {
     struct dhcp_message msg;
     size_t cursor = 0;
@@ -146,7 +150,7 @@ static void dhcps$$reply(struct dhcps$pool* pool, const struct dhcp_message* req
     size_t len = dhcp_finish(&msg, cursor);
 
     uint32_t ciaddr = net_ntohl(req->ciaddr);
-    if (ciaddr && type != DHCPNAK) {
+    if (ciaddr && ciaddr == src_ip && type != DHCPNAK) {
         udp_send(server, UDP_PORT_DHCP_SERVER, ciaddr, UDP_PORT_DHCP_CLIENT, &msg, len);
     } else {
         udp_send_dev(pool->dev, server, UDP_PORT_DHCP_SERVER, NET_IP_BROADCAST, UDP_PORT_DHCP_CLIENT, &msg, len);
@@ -194,7 +198,8 @@ static void dhcps$$bind_lease(struct dhcps$pool* pool, struct dhcps$lease* lease
     }
 }
 
-static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_message* msg, size_t len, uint32_t now)
+static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_message* msg, size_t len,
+                                  uint32_t src_ip, uint32_t now)
 {
     uint32_t requested = 0, server_id = 0;
     uint32_t ciaddr = net_ntohl(msg->ciaddr);
@@ -213,10 +218,10 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
         if (lease && lease->ip == requested) {
             dhcps$$bind_lease(pool, lease, msg, len, now);
             dhcp_stats.server_acks++;
-            dhcps$$reply(pool, msg, DHCPACK, lease->ip);
+            dhcps$$reply(pool, msg, src_ip, DHCPACK, lease->ip);
         } else {
             dhcp_stats.server_naks++;
-            dhcps$$reply(pool, msg, DHCPNAK, 0);
+            dhcps$$reply(pool, msg, src_ip, DHCPNAK, 0);
         }
         return;
     }
@@ -233,7 +238,7 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
     if (lease && lease->ip == ip) {
         dhcps$$bind_lease(pool, lease, msg, len, now);
         dhcp_stats.server_acks++;
-        dhcps$$reply(pool, msg, DHCPACK, ip);
+        dhcps$$reply(pool, msg, src_ip, DHCPACK, ip);
         return;
     }
     if (!lease && dhcps$$in_pool(pool, ip) && !dhcps$$by_ip(ip)) {
@@ -242,7 +247,7 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
         if (lease) {
             dhcps$$bind_lease(pool, lease, msg, len, now);
             dhcp_stats.server_acks++;
-            dhcps$$reply(pool, msg, DHCPACK, ip);
+            dhcps$$reply(pool, msg, src_ip, DHCPACK, ip);
             return;
         }
     }
@@ -251,14 +256,14 @@ static void dhcps$$handle_request(struct dhcps$pool* pool, const struct dhcp_mes
        the address isn't from our network - another server owns it. */
     if (on_our_net || !ciaddr) {
         dhcp_stats.server_naks++;
-        dhcps$$reply(pool, msg, DHCPNAK, 0);
+        dhcps$$reply(pool, msg, src_ip, DHCPNAK, 0);
     }
 }
 
 static void dhcps$$receive(struct netdev* dev, uint32_t src_ip, uint16_t src_port,
                            uint32_t dst_ip, uint16_t dst_port, const uint8_t* data, size_t len)
 {
-    (void)src_ip; (void)src_port; (void)dst_ip; (void)dst_port;
+    (void)src_port; (void)dst_ip; (void)dst_port;
     const struct dhcp_message* msg = (const struct dhcp_message*)data;
     struct dhcps$pool* pool = NULL;
     uint8_t type;
@@ -290,10 +295,10 @@ static void dhcps$$receive(struct netdev* dev, uint32_t src_ip, uint16_t src_por
             lease->expires_ms = now + DHCPS_OFFER_HOLD_MS;
         }
         dhcp_stats.server_offers++;
-        dhcps$$reply(pool, msg, DHCPOFFER, lease->ip);
+        dhcps$$reply(pool, msg, src_ip, DHCPOFFER, lease->ip);
         break;
     case DHCPREQUEST:
-        dhcps$$handle_request(pool, msg, len, now);
+        dhcps$$handle_request(pool, msg, len, src_ip, now);
         break;
     case DHCPRELEASE:
         lease = dhcps$$by_mac(pool, msg->chaddr);

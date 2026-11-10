@@ -242,26 +242,32 @@ for i in range(2000):
 
 # Send one hand-made DHCPREQUEST from the LAN host and print the reply type.
 # $1 client MAC, $2 requested address. INIT-REBOOT form: no server id, no ciaddr.
+# Optional $3 ciaddr (and no broadcast flag), $4 source address (must be on tap0);
+# with $3 the output also says where the reply was sent ("to=a.b.c.d").
 dhcp_probe() {
-    python3 - "$1" "$2" <<'PY'
+    python3 - "$@" <<'PY'
 import socket, struct, sys, random
 mac = bytes.fromhex(sys.argv[1].replace(':', ''))
 requested = socket.inet_aton(sys.argv[2])
+ciaddr = socket.inet_aton(sys.argv[3]) if len(sys.argv) > 3 else bytes(4)
+source = sys.argv[4] if len(sys.argv) > 4 else ''
+flags = 0 if len(sys.argv) > 3 else 0x8000
 xid = random.getrandbits(32)
-msg = struct.pack('!BBBBIHHIIII', 1, 1, 6, 0, xid, 0, 0x8000, 0, 0, 0, 0)
+msg = struct.pack('!BBBBIHH', 1, 1, 6, 0, xid, 0, flags) + ciaddr + bytes(12)
 msg += mac + bytes(10) + bytes(64 + 128) + struct.pack('!I', 0x63825363)
 msg += bytes([53, 1, 3, 50, 4]) + requested + bytes([255])
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, b'tap0')
-s.bind(('', 68))
+s.setsockopt(socket.IPPROTO_IP, socket.IP_PKTINFO, 1)
+s.bind((source, 68))
 s.settimeout(3)
 s.sendto(msg, ('255.255.255.255', 67))
 names = {2: 'OFFER', 5: 'ACK', 6: 'NAK'}
 try:
     while True:
-        reply = s.recv(1500)
+        reply, cmsgs, _, _ = s.recvmsg(1500, socket.CMSG_SPACE(12))
         if len(reply) < 240 or struct.unpack('!I', reply[4:8])[0] != xid:
             continue
         opts, i, kind = reply[240:], 0, None
@@ -271,7 +277,12 @@ try:
             if opts[i] == 53:
                 kind = opts[i + 2]
             i += 2 + opts[i + 1]
-        print('%s yiaddr=%s' % (names.get(kind, kind), socket.inet_ntoa(reply[16:20])))
+        to = ''
+        if len(sys.argv) > 3:
+            # struct in_pktinfo: ifindex, local address, header destination address
+            to = ' to=' + next(socket.inet_ntoa(d[8:12]) for lvl, typ, d in cmsgs
+                               if lvl == socket.IPPROTO_IP and typ == socket.IP_PKTINFO)
+        print('%s yiaddr=%s%s' % (names.get(kind, kind), socket.inet_ntoa(reply[16:20]), to))
         break
 except socket.timeout:
     print('no reply')
@@ -367,6 +378,14 @@ scenario_home() {
     check_output "INIT-REBOOT for a free pool address: ACK" "^ACK yiaddr=10.0.9.140$" dhcp_probe 02:00:00:00:00:01 10.0.9.140
     check_output "INIT-REBOOT for an address leased to someone else: NAK" "^NAK" dhcp_probe 02:00:00:00:00:02 10.0.9.140
     check_output "INIT-REBOOT for an address on another network: NAK" "^NAK" dhcp_probe 02:00:00:00:00:03 172.16.0.5
+    # GNS3's VPCS fills in ciaddr before it owns the address (sending from 0.0.0.0):
+    # a unicast ACK would wait for an ARP reply that never comes, so it must be broadcast
+    check_output "REQUEST with ciaddr from another source address: ACK is broadcast" \
+        "^ACK yiaddr=10\.0\.9\.141 to=255\.255\.255\.255$" dhcp_probe 02:00:00:00:00:04 10.0.9.141 10.0.9.141
+    ip addr add 10.0.9.142/24 dev tap0
+    check_output "REQUEST from the client's own ciaddr (renewal): ACK is unicast" \
+        "^ACK yiaddr=10\.0\.9\.142 to=10\.0\.9\.142$" dhcp_probe 02:00:00:00:00:05 10.0.9.142 10.0.9.142 10.0.9.142
+    ip addr del 10.0.9.142/24 dev tap0
 
     echo "--- NAT"
     ip addr add 10.0.9.3/24 dev tap0                # a second LAN host
