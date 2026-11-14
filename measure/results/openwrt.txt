@@ -1,0 +1,352 @@
+
+==== router: openwrt, image openwrt-19.07.10-x86-64-combined-ext4.img (285736960 bytes), measured 2026-11-14T13:42Z
+(ICMP rate limits and the firewall's syn_flood limit lifted for the scan)
+
+==== nmap 7.98
+
+==== LAN: TCP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:42 +0400
+Nmap scan report for 192.168.1.1
+Host is up (0.00042s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT   STATE SERVICE
+22/tcp open  ssh
+53/tcp open  domain
+80/tcp open  http
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.35 seconds
+
+==== LAN: UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:42 +0400
+Nmap scan report for 192.168.1.1
+Host is up (0.00049s latency).
+Not shown: 65532 closed udp ports (port-unreach)
+PORT      STATE         SERVICE
+53/udp    open          domain
+67/udp    open          dhcps
+35367/udp open|filtered unknown
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.75 seconds
+
+==== LAN: service versions on open TCP ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:42 +0400
+Nmap scan report for 192.168.1.1
+Host is up (0.00039s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     Dropbear sshd (protocol 2.0)
+53/tcp open  domain  Cloudflare public DNS
+80/tcp open  http    OpenWrt uHTTPd
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+Service Info: OS: Linux; Device: WAP; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 6.31 seconds
+
+==== LAN: IPv6, link-local address, TCP and UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:42 +0400
+Nmap scan report for fe80::5054:ff:fe12:3456
+Host is up (0.00028s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT   STATE SERVICE
+22/tcp open  ssh
+53/tcp open  domain
+80/tcp open  http
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.53 seconds
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:42 +0400
+Warning: fe80::5054:ff:fe12:3456 giving up on port because retransmission cap hit (2).
+Nmap scan report for fe80::5054:ff:fe12:3456
+Host is up (0.00026s latency).
+Not shown: 65266 open|filtered udp ports (no-response), 268 closed udp ports (port-unreach)
+PORT   STATE SERVICE
+53/udp open  domain
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 65.84 seconds
+
+==== WAN: TCP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 10.0.8.2
+Host is up (0.00045s latency).
+All 65535 scanned ports on 10.0.8.2 are in ignored states.
+Not shown: 65535 closed tcp ports (reset)
+MAC Address: 52:54:00:12:34:57 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.51 seconds
+
+==== WAN: UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 10.0.8.2
+Host is up (0.00065s latency).
+All 65535 scanned ports on 10.0.8.2 are in ignored states.
+Not shown: 65535 closed udp ports (port-unreach)
+MAC Address: 52:54:00:12:34:57 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.51 seconds
+
+==== WAN: TCP to the router's LAN address (routed via its WAN address)
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 192.168.1.1
+Host is up (0.00050s latency).
+All 65535 scanned ports on 192.168.1.1 are in ignored states.
+Not shown: 65535 closed tcp ports (reset)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.45 seconds
+
+==== OpenWrt: login over SSH from the LAN with no password
+Warning: Permanently added '192.168.1.1' (RSA) to the list of known hosts.
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+** This session may be vulnerable to "store now, decrypt later" attacks.
+** The server may need to be upgraded. See https://openssh.com/pq.html
+logged in as root on OpenWrt
+
+==== OpenWrt: web interface (LuCI) login from the LAN with an empty password
+HTTP/1.1 302 Found
+Connection: Keep-Alive
+Transfer-Encoding: chunked
+Keep-Alive: timeout=20
+Set-Cookie: sysauth=33310cae1a53305cd98b76850f84b6a7; path=/cgi-bin/luci/; SameSite=Strict; HttpOnly
+Location: /cgi-bin/luci/
+
+
+==== OpenWrt: inside view (serial console)
+### cat /etc/openwrt_release
+DISTRIB_ID='OpenWrt'
+DISTRIB_RELEASE='19.07.10'
+DISTRIB_REVISION='r11427-9ce6aa9d8d'
+DISTRIB_TARGET='x86/64'
+DISTRIB_ARCH='x86_64'
+DISTRIB_DESCRIPTION='OpenWrt 19.07.10 r11427-9ce6aa9d8d'
+DISTRIB_TAINTS=''
+### uname -a
+Linux OpenWrt 4.14.275 #0 SMP Sat Apr 16 13:13:32 2022 x86_64 GNU/Linux
+### netstat -lntu
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      
+tcp        0      0 127.0.0.1:53            0.0.0.0:*               LISTEN      
+tcp        0      0 10.0.8.2:53             0.0.0.0:*               LISTEN      
+tcp        0      0 192.168.1.1:53          0.0.0.0:*               LISTEN      
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      
+tcp        0      0 :::80                   :::*                    LISTEN      
+tcp        0      0 ::1:53                  :::*                    LISTEN      
+tcp        0      0 fe80::5054:ff:fe12:3457:53 :::*                    LISTEN      
+tcp        0      0 fda6:c50a:a32::1:53     :::*                    LISTEN      
+tcp        0      0 fe80::5054:ff:fe12:3456:53 :::*                    LISTEN      
+tcp        0      0 :::22                   :::*                    LISTEN      
+udp        0      0 127.0.0.1:53            0.0.0.0:*                           
+udp        0      0 10.0.8.2:53             0.0.0.0:*                           
+udp        0      0 192.168.1.1:53          0.0.0.0:*                           
+udp        0      0 0.0.0.0:67              0.0.0.0:*                           
+udp        0      0 ::1:53                  :::*                                
+udp        0      0 fe80::5054:ff:fe12:3457:53 :::*                                
+udp        0      0 fda6:c50a:a32::1:53     :::*                                
+udp        0      0 fe80::5054:ff:fe12:3456:53 :::*                                
+udp        0      0 :::546                  :::*                                
+udp        0      0 :::547                  :::*                                
+### ps w
+  PID USER       VSZ STAT COMMAND
+    1 root      1160 S    /sbin/procd
+    2 root         0 SW   [kthreadd]
+    3 root         0 IW   [kworker/0:0]
+    4 root         0 IW<  [kworker/0:0H]
+    5 root         0 IW   [kworker/u2:0]
+    6 root         0 IW<  [mm_percpu_wq]
+    7 root         0 SW   [ksoftirqd/0]
+    8 root         0 IW   [rcu_sched]
+    9 root         0 IW   [rcu_bh]
+   10 root         0 SW   [migration/0]
+   11 root         0 SW   [cpuhp/0]
+   12 root         0 IW   [kworker/u2:1]
+   32 root         0 IW   [kworker/0:1]
+  303 root         0 SW   [oom_reaper]
+  304 root         0 IW<  [writeback]
+  306 root         0 SW   [kcompactd0]
+  307 root         0 IW<  [crypto]
+  308 root         0 IW<  [kintegrityd]
+  310 root         0 IW<  [kblockd]
+  432 root         0 IW<  [ata_sff]
+  453 root         0 IW<  [watchdogd]
+  456 root         0 IW   [kworker/u2:2]
+  565 root         0 SW   [kswapd0]
+  648 root         0 IW<  [pencrypt]
+  650 root         0 IW<  [pdecrypt]
+  677 root         0 IW<  [acpi_thermal_pm]
+  679 root         0 IW   [kworker/u2:3]
+  725 root         0 IW<  [ttm_swap]
+  752 root         0 IW<  [kworker/0:1H]
+  778 root         0 SW   [scsi_eh_0]
+  779 root         0 IW<  [scsi_tmf_0]
+  782 root         0 SW   [scsi_eh_1]
+  783 root         0 IW<  [scsi_tmf_1]
+  786 root         0 IW<  [ipv6_addrconf]
+  850 root         0 IW<  [ext4-rsv-conver]
+  942 root         0 IW<  [ext4-rsv-conver]
+ 1068 root       888 S    /sbin/ubusd
+ 1069 root      1084 S    /bin/ash --login
+ 1070 root       720 S    /sbin/askfirst /usr/libexec/login.sh
+ 1083 root       780 S    /sbin/urngd
+ 1398 root       964 S    /sbin/logd -S 64
+ 1429 root      1332 S    /sbin/rpcd -s /var/run/ubus.sock -t 30
+ 1529 root       888 S    /usr/sbin/dropbear -F -P /var/run/dropbear.1.pid -p 22 -K 300 -T 3
+ 1583 root      1268 S    /sbin/netifd
+ 1623 root      1064 S    /usr/sbin/odhcpd
+ 1695 root       808 S    odhcp6c -s /lib/netifd/dhcpv6.script -P0 -t120 eth1
+ 1698 root      1072 S    udhcpc -p /var/run/udhcpc-eth1.pid -s /lib/netifd/dhcp.script -f -t 0 -i eth1 -x hostname:OpenWrt -C -O 1
+ 1740 root       936 S    /usr/sbin/uhttpd -f -h /www -r OpenWrt -x /cgi-bin -t 60 -T 30 -k 20 -A 1 -n 3 -N 100 -R -p 0.0.0.0:80 -p
+ 1888 root      1072 S<   /usr/sbin/ntpd -n -N -S /usr/sbin/ntpd-hotplug -p 0.openwrt.pool.ntp.org -p 1.openwrt.pool.ntp.org -p 2.o
+ 2060 dnsmasq   1120 S    /usr/sbin/dnsmasq -C /var/etc/dnsmasq.conf.cfg01411c -k -x /var/run/dnsmasq/dnsmasq.cfg01411c.pid
+ 2077 root      1072 R    ps w
+### free
+              total        used        free      shared  buff/cache   available
+Mem:         114972       23256       84536         236        7180       64260
+Swap:             0           0           0
+### df -k /
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/root               258016     12652    240124   5% /
+### opkg list-installed | wc -l
+117
+### opkg list-installed
+base-files - 204.4-r11427-9ce6aa9d8d
+bnx2-firmware - 20190416-1
+busybox - 1.30.1-6
+cgi-io - 2021-09-08-98cef9dd-20
+dnsmasq - 2.80-16.3
+dropbear - 2019.78-2
+e2fsprogs - 1.44.5-2
+firewall - 2019-11-22-8174814a-3
+fstools - 2020-05-12-84269037-1
+fwtool - 2
+getrandom - 2019-06-16-4df34a4d-4
+ip6tables - 1.8.3-1
+iptables - 1.8.3-1
+jshn - 2020-05-25-66195aee-1
+jsonfilter - 2018-02-04-c7e938d6-1
+kernel - 4.14.275-1-db2facee1f6c24f1e414ee78aa2d0aee
+kmod-bnx2 - 4.14.275-1
+kmod-button-hotplug - 4.14.275-3
+kmod-e1000 - 4.14.275-1
+kmod-e1000e - 4.14.275-1
+kmod-hwmon-core - 4.14.275-1
+kmod-i2c-algo-bit - 4.14.275-1
+kmod-i2c-core - 4.14.275-1
+kmod-igb - 4.14.275-1
+kmod-input-core - 4.14.275-1
+kmod-ip6tables - 4.14.275-1
+kmod-ipt-conntrack - 4.14.275-1
+kmod-ipt-core - 4.14.275-1
+kmod-ipt-nat - 4.14.275-1
+kmod-ipt-offload - 4.14.275-1
+kmod-lib-crc-ccitt - 4.14.275-1
+kmod-mii - 4.14.275-1
+kmod-nf-conntrack - 4.14.275-1
+kmod-nf-conntrack6 - 4.14.275-1
+kmod-nf-flow - 4.14.275-1
+kmod-nf-ipt - 4.14.275-1
+kmod-nf-ipt6 - 4.14.275-1
+kmod-nf-nat - 4.14.275-1
+kmod-nf-reject - 4.14.275-1
+kmod-nf-reject6 - 4.14.275-1
+kmod-ppp - 4.14.275-1
+kmod-pppoe - 4.14.275-1
+kmod-pppox - 4.14.275-1
+kmod-pps - 4.14.275-1
+kmod-ptp - 4.14.275-1
+kmod-r8169 - 4.14.275-1
+kmod-slhc - 4.14.275-1
+libblkid1 - 2.34-1
+libblobmsg-json - 2020-05-25-66195aee-1
+libc - 1.1.24-2
+libcomerr0 - 1.44.5-2
+libext2fs2 - 1.44.5-2
+libf2fs6 - 1.12.0-3
+libgcc1 - 7.5.0-2
+libip4tc2 - 1.8.3-1
+libip6tc2 - 1.8.3-1
+libiwinfo-lua - 2019-10-16-07315b6f-1
+libiwinfo20181126 - 2019-10-16-07315b6f-1
+libjson-c2 - 0.12.1-3.1
+libjson-script - 2020-05-25-66195aee-1
+liblua5.1.5 - 5.1.5-3
+liblucihttp-lua - 2019-07-05-a34a17d5-1
+liblucihttp0 - 2019-07-05-a34a17d5-1
+libnl-tiny - 0.1-5
+libpthread - 1.1.24-2
+librt - 1.1.24-2
+libsmartcols1 - 2.34-1
+libss2 - 1.44.5-2
+libubox20191228 - 2020-05-25-66195aee-1
+libubus-lua - 2022-02-21-b32a0e17-1
+libubus20210603 - 2022-02-21-b32a0e17-1
+libuci20130104 - 2019-09-01-415f9e48-4
+libuclient20160123 - 2020-06-17-51e16ebf-1
+libuuid1 - 2.34-1
+libxtables12 - 1.8.3-1
+logd - 2019-06-16-4df34a4d-4
+lua - 5.1.5-3
+luci - git-22.099.58928-786ebc9-1
+luci-app-firewall - git-22.099.58928-786ebc9-1
+luci-app-opkg - git-22.099.58928-786ebc9-1
+luci-base - git-22.099.58928-786ebc9-1
+luci-lib-ip - git-22.099.58928-786ebc9-1
+luci-lib-jsonc - git-22.099.58928-786ebc9-1
+luci-lib-nixio - git-22.099.58928-786ebc9-1
+luci-mod-admin-full - git-22.099.58928-786ebc9-1
+luci-mod-network - git-22.099.58928-786ebc9-1
+luci-mod-status - git-22.099.58928-786ebc9-1
+luci-mod-system - git-22.099.58928-786ebc9-1
+luci-proto-ipv6 - git-22.099.58928-786ebc9-1
+luci-proto-ppp - git-22.099.58928-786ebc9-1
+luci-theme-bootstrap - git-22.099.58928-786ebc9-1
+mkf2fs - 1.12.0-3
+mtd - 24
+netifd - 2021-01-09-753c351b-1
+odhcp6c - 2021-01-09-64e1b4e7-16
+odhcpd-ipv6only - 2020-05-03-49e4949c-3
+openwrt-keyring - 2021-02-20-49283916-2
+opkg - 2021-01-31-c5dccea9-1
+partx-utils - 2.34-1
+ppp - 2.4.7.git-2019-05-25-3
+ppp-mod-pppoe - 2.4.7.git-2019-05-25-3
+procd - 2020-03-07-09b9bd82-1
+r8169-firmware - 20190416-1
+rpcd - 2020-05-26-67c8a3fd-1
+rpcd-mod-file - 2020-05-26-67c8a3fd-1
+rpcd-mod-iwinfo - 2020-05-26-67c8a3fd-1
+rpcd-mod-luci - 20201107
+rpcd-mod-rrdns - 20170710
+ubox - 2019-06-16-4df34a4d-4
+ubus - 2022-02-21-b32a0e17-1
+ubusd - 2022-02-21-b32a0e17-1
+uci - 2019-09-01-415f9e48-4
+uclient-fetch - 2020-06-17-51e16ebf-1
+uhttpd - 2020-10-01-3abcc891-1
+urandom-seed - 1.0-1
+urngd - 2020-01-21-c7f7b6b6-1
+usign - 2020-05-23-f1f65026-1
+### ls -l --color=never /usr/sbin/dnsmasq /usr/sbin/dropbear /usr/sbin/uhttpd /usr/sbin/odhcpd /sbin/netifd /sbin/procd /bin/busybox /lib/libc.so
+in/uhttpd /usr/sbin/odhcpd /sbin/netifd /sbin/procd /bin/busybox /lib/libc.so
+-rwxr-xr-x    1 root     root        376867 Apr 16  2022 /bin/busybox
+-rwxr-xr-x    1 root     root        459859 Apr 16  2022 /lib/libc.so
+-rwxr-xr-x    1 root     root        146796 Apr 16  2022 /sbin/netifd
+-rwxr-xr-x    1 root     root         76145 Apr 16  2022 /sbin/procd
+-rwxr-xr-x    1 root     root        226907 Apr 16  2022 /usr/sbin/dnsmasq
+-rwxr-xr-x    1 root     root        185139 Apr 16  2022 /usr/sbin/dropbear
+-rwxr-xr-x    1 root     root         74699 Apr 16  2022 /usr/sbin/odhcpd
+-rwxr-xr-x    1 root     root         53995 Apr 16  2022 /usr/sbin/uhttpd
+### du -sk /usr/lib/lua/luci /www
+404	/usr/lib/lua/luci
+992	/www
+### iptables -S | wc -l
+51
+### iptables -S zone_wan_input
+-N zone_wan_input
+-A zone_wan_input -p udp -m udp --dport 68 -m comment --comment "!fw3: Allow-DHCP-Renew" -j ACCEPT
+-A zone_wan_input -p icmp -m icmp --icmp-type 8 -m comment --comment "!fw3: Allow-Ping" -j ACCEPT
+-A zone_wan_input -p igmp -m comment --comment "!fw3: Allow-IGMP" -j ACCEPT
+-A zone_wan_input -m conntrack --ctstate DNAT -m comment --comment "!fw3: Accept port redirections" -j ACCEPT
+-A zone_wan_input -m comment --comment "!fw3" -j zone_wan_src_REJECT

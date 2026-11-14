@@ -93,6 +93,15 @@ The network stack (`kernel/net/*.c`, `kernel/random.c`, `kernel/cmdline.c`, `lib
 - libFuzzer runs write new inputs to `fuzz/work/<target>` (ignored) and crashes to `fuzz/findings/`; `make -C fuzz minimize T=...` merges the inputs that add coverage into `corpus/`.
 - Host-build gotchas: `fuzz/include/kio.h` shadows libk's (whose `tty.h` refuses Linux); the kernel's `-m32` assumptions don't hold (64-bit pointers), so don't cast pointers to `uint32_t` in `kernel/net`.
 
+### Attack-surface measurement (`measure/`)
+
+- `sh measure/attack_surface.sh lazydays|openwrt [image]`: the router between a LAN and a WAN namespace (like `check_net.sh`; dnsmasq gives it 10.0.8.2), then nmap TCP/UDP scans of all ports from both sides, IPv6 on the LAN, service versions, the router's own view and logins with no or empty password, into `measure/results/<router>.txt`. `SKIP_SCANS=1` skips nmap.
+  - OpenWrt is the official 19.07.10 x86-64 image in `~/opt/openwrt/`, run with `-snapshot`, driven over its serial console by `measure/console.py`.
+  - Its ICMP rate limits and firewall `syn_flood` limit are lifted before scanning, or most probes look "filtered".
+  - ssh needs `-F /dev/null` inside the user namespace (the host's ssh config looks foreign there) and `HostKeyAlgorithms=+ssh-rsa` for its dropbear.
+- `python3 measure/reachable.py`: per file, the stack lines that run only because of outside input (fuzz corpus under gcov, each target minus an empty input); `wan` + `dhcp_client` count as WAN input.
+- Write-up and results: `docs/attack-surface.md`.
+
 ### GNS3 lab (`gns3/`)
 
 The thesis test bench: LazyDaysOS in GNS3 between Docker hosts, measured live. Set up on this machine (see the user's memory for details); the pieces in the repo:

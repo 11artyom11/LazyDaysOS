@@ -16,9 +16,11 @@
 #   - login without a password (OpenWrt ships without a root password)
 # Output: measure/results/<router>.txt. Needs nmap; dnsmasq, qemu as for check_net.sh.
 # SKIP_SCANS=1 skips the nmap scans (everything else still runs).
-# OpenWrt rate-limits ICMP errors (about one per second), which would make a full UDP
-# scan take a day: the script lifts that limit over the console first (a measurement
-# convenience, it changes no service).
+# OpenWrt rate-limits what a full scan needs: ICMP errors (icmp_ratelimit,
+# icmp_msgs_per_sec) and, in its default firewall, incoming SYNs (syn_flood, 25/s).
+# Probes that hit those limits look "filtered", and an open port could hide among
+# them, so the script lifts the limits over the console first and logs that it did.
+# This is a measurement convenience: no service or firewall rule changes.
 
 ROUTER=${1:-lazydays}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -91,7 +93,8 @@ echo "booting $ROUTER ($IMAGE)..."
 if [ "$ROUTER" = openwrt ]; then
     sleep 1
     console wait "Please press Enter to activate this console" 180 || { echo "OpenWrt did not boot"; exit 1; }
-    console run "sysctl -w net.ipv4.icmp_ratelimit=0" > /dev/null
+    console run "sysctl -w net.ipv4.icmp_ratelimit=0 net.ipv4.icmp_msgs_per_sec=1000000 net.ipv4.icmp_msgs_burst=1000000" \
+        "uci set firewall.@defaults[0].syn_flood=0 && uci commit firewall && /etc/init.d/firewall reload" > /dev/null
 fi
 for i in $(seq 1 120); do
     grep -q "DHCPACK(tap1) $WAN_IP" $TMP/dnsmasq.log 2>/dev/null && ping -c 1 -W 1 $LAN_IP >/dev/null 2>&1 && break
@@ -102,6 +105,7 @@ sleep 5                                         # let services settle
 
 : > "$OUT"
 section "router: $ROUTER, image $(basename "$IMAGE") ($(stat -c %s "$IMAGE") bytes), measured $(date -u +%Y-%m-%dT%H:%MZ)"
+[ "$ROUTER" = openwrt ] && echo "(ICMP rate limits and the firewall's syn_flood limit lifted for the scan)" | tee -a "$OUT"
 
 # ---- from outside ----
 scan() {    # $1 side (LAN/WAN), $2 target, rest: how to run nmap on that side
@@ -117,6 +121,10 @@ scan LAN $LAN_IP
 section "LAN: service versions on open TCP ports"
 open=$(grep -E "^[0-9]+/tcp +open " "$OUT" | cut -d/ -f1 | sort -un | paste -sd, -)
 [ -n "$open" ] && record nmap -n -Pn -sV -p "$open" $LAN_IP
+section "LAN: IPv6, link-local address, TCP and UDP, all ports"
+LL=fe80::5054:ff:fe12:3456%tap0                  # from the router's LAN MAC
+record nmap -6 -n -Pn -sS -p- -T4 --min-rate 3000 --max-retries 2 $LL
+record nmap -6 -n -Pn -sU -p- -T4 --min-rate 3000 --max-retries 2 $LL
 wan ip route add 10.0.9.0/24 via $WAN_IP 2>/dev/null; wan ip route add 192.168.1.0/24 via $WAN_IP 2>/dev/null
 scan WAN $WAN_IP wan
 section "WAN: TCP to the router's LAN address (routed via its WAN address)"

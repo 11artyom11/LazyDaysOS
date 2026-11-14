@@ -1,0 +1,123 @@
+
+==== router: lazydays, image LazyDaysOS.bin (338228 bytes), measured 2026-11-14T13:43Z
+
+==== nmap 7.98
+
+==== LAN: TCP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 10.0.9.2
+Host is up (0.0012s latency).
+Not shown: 65534 closed tcp ports (reset)
+PORT   STATE SERVICE
+80/tcp open  http
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.82 seconds
+
+==== LAN: UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 10.0.9.2
+Host is up (0.00055s latency).
+Not shown: 65533 closed udp ports (port-unreach)
+PORT   STATE         SERVICE
+67/udp open|filtered dhcps
+68/udp open|filtered dhcpc
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 2.07 seconds
+
+==== LAN: service versions on open TCP ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:43 +0400
+Nmap scan report for 10.0.9.2
+Host is up (0.00035s latency).
+
+PORT   STATE SERVICE VERSION
+80/tcp open  http    LazyDaysOS
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port80-TCP:V=7.98%I=7%D=11/14%Time=6AF86596%P=x86_64-pc-linux-gnu%r(NUL
+SF:L,1A8,"HTTP/1\.1\x20408\x20Request\x20Timeout\r\nServer:\x20LazyDaysOS\
+SF:r\nContent-Type:\x20text/plain\r\nContent-Length:\x2016\r\nCache-Contro
+SF:l:\x20no-store\r\nConnection:\x20close\r\nX-Content-Type-Options:\x20no
+SF:sniff\r\nX-Frame-Options:\x20DENY\r\nReferrer-Policy:\x20no-referrer\r\
+SF:nContent-Security-Policy:\x20default-src\x20'self';\x20script-src\x20's
+SF:elf'\x20'unsafe-inline';\x20style-src\x20'self'\x20'unsafe-inline';\x20
+SF:img-src\x20'self'\x20data:;\x20frame-ancestors\x20'none';\x20form-actio
+SF:n\x20'self'\r\n\r\nrequest\x20timeout\n")%r(GetRequest,1A9,"HTTP/1\.1\x
+SF:20400\x20Bad\x20Request\r\nServer:\x20LazyDaysOS\r\nContent-Type:\x20te
+SF:xt/plain\r\nContent-Length:\x2021\r\nCache-Control:\x20no-store\r\nConn
+SF:ection:\x20close\r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Optio
+SF:ns:\x20DENY\r\nReferrer-Policy:\x20no-referrer\r\nContent-Security-Poli
+SF:cy:\x20default-src\x20'self';\x20script-src\x20'self'\x20'unsafe-inline
+SF:';\x20style-src\x20'self'\x20'unsafe-inline';\x20img-src\x20'self'\x20d
+SF:ata:;\x20frame-ancestors\x20'none';\x20form-action\x20'self'\r\n\r\nHos
+SF:t\x20header\x20required\n")%r(HTTPOptions,1A9,"HTTP/1\.1\x20400\x20Bad\
+SF:x20Request\r\nServer:\x20LazyDaysOS\r\nContent-Type:\x20text/plain\r\nC
+SF:ontent-Length:\x2021\r\nCache-Control:\x20no-store\r\nConnection:\x20cl
+SF:ose\r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20DENY\r
+SF:\nReferrer-Policy:\x20no-referrer\r\nContent-Security-Policy:\x20defaul
+SF:t-src\x20'self';\x20script-src\x20'self'\x20'unsafe-inline';\x20style-s
+SF:rc\x20'self'\x20'unsafe-inline';\x20img-src\x20'self'\x20data:;\x20fram
+SF:e-ancestors\x20'none';\x20form-action\x20'self'\r\n\r\nHost\x20header\x
+SF:20required\n")%r(RTSPRequest,19C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\
+SF:nServer:\x20LazyDaysOS\r\nContent-Type:\x20text/plain\r\nContent-Length
+SF::\x209\r\nCache-Control:\x20no-store\r\nConnection:\x20close\r\nX-Conte
+SF:nt-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20DENY\r\nReferrer-Pol
+SF:icy:\x20no-referrer\r\nContent-Security-Policy:\x20default-src\x20'self
+SF:';\x20script-src\x20'self'\x20'unsafe-inline';\x20style-src\x20'self'\x
+SF:20'unsafe-inline';\x20img-src\x20'self'\x20data:;\x20frame-ancestors\x2
+SF:0'none';\x20form-action\x20'self'\r\n\r\nnot\x20HTTP\n");
+MAC Address: 52:54:00:12:34:56 (QEMU virtual NIC)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 126.29 seconds
+
+==== LAN: IPv6, link-local address, TCP and UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:45 +0400
+Nmap done: 1 IP address (0 hosts up) scanned in 0.47 seconds
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:45 +0400
+Nmap done: 1 IP address (0 hosts up) scanned in 0.47 seconds
+
+==== WAN: TCP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:45 +0400
+Nmap scan report for 10.0.8.2
+Host is up (0.00032s latency).
+Not shown: 65534 closed tcp ports (reset)
+PORT   STATE    SERVICE
+80/tcp filtered http
+MAC Address: 52:54:00:12:34:57 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 1.93 seconds
+
+==== WAN: UDP, all ports
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:45 +0400
+Nmap scan report for 10.0.8.2
+Host is up (0.00048s latency).
+Not shown: 65533 closed udp ports (port-unreach)
+PORT   STATE         SERVICE
+67/udp open|filtered dhcps
+68/udp open|filtered dhcpc
+MAC Address: 52:54:00:12:34:57 (QEMU virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 2.11 seconds
+
+==== WAN: TCP to the router's LAN address (routed via its WAN address)
+Starting Nmap 7.98 ( https://nmap.org ) at 2026-11-14 17:45 +0400
+Nmap scan report for 10.0.9.2
+Host is up.
+All 65535 scanned ports on 10.0.9.2 are in ignored states.
+Not shown: 65535 filtered tcp ports (no-response)
+
+Nmap done: 1 IP address (1 host up) scanned in 44.49 seconds
+
+==== LazyDaysOS: API without the password, and with an empty one
+401
+401
+
+==== LazyDaysOS: inside view
+{"system":{"name":"LazyDaysOS","uptime_ms":186300,"ready_ms":810,"heap_size":4194304,"heap_used":346112},"cpu":{"busy_permille":1,"idle_ms":179324},"interfaces":[{"name":"eth0","mac":"52:54:00:12:34:56","role":"lan","link":true,"ipv4":"10.0.9.2/24","dhcp":"server","rx_packets":131386,"rx_bytes":8622784,"rx_dropped":0,"rx_missed":0,"tx_packets":131353,"tx_bytes":8170271,"tx_dropped":0},{"name":"eth1","mac":"52:54:00:12:34:57","role":"wan","link":true,"ipv4":"10.0.8.2/24","dhcp":"client","rx_packets":131485,"rx_bytes":8625691,"rx_dropped":0,"rx_missed":0,"tx_packets":131167,"tx_bytes":8133606,"tx_dropped":0}],"clients":[],"routes":[{"network":"10.0.9.0/24","gateway":null,"port":"eth0"},{"network":"10.0.8.0/24","gateway":null,"port":"eth1"},{"network":"0.0.0.0/0","gateway":"10.0.8.1","port":"eth1"}],"ipv4":{"rx_packets":262864,"tx_packets":262513,"forwarded":0,"ttl_exceeded":0,"no_route":0,"bad_header":0,"wrong_port":312},"nat":{"active":0,"created":0,"expired":0,"outbound":0,"inbound":0,"icmp_errors":0,"table_full":0,"firewall_dropped":0,"blocked_dropped":0},"dhcp":{"leases":0,"offers":0,"acks":0,"naks":0},"tcp":{"active":1,"accepted":41,"retransmits":0,"fast_retransmits":0,"resets_sent":131068,"refused":0,"filtered":2,"syn_cookies_sent":0,"syn_cookies_accepted":0,"syn_evicted":0,"fin_wait_dropped":0,"stalled_dropped":0},"http":{"requests":4,"errors":34,"forbidden":0,"wrong_host":0},"auth":{"logins":0,"failures":1,"lockouts":0,"locked_rejected":0,"csrf_rejected":0}}
+[K_INFO] dhcp: client started on eth1
+[K_INFO] dhcp: serving 10.0.9.100-10.0.9.150 on eth0
+[K_INFO] nat: eth1 is the outside port, unsolicited inbound traffic is dropped
+[K_INFO] auth: admin password set on the command line
+[K_INFO] HTTP management interface on port 80 (inside ports only)
+[K_INFO] dhcp: eth1 bound 10.0.8.2/24 router 10.0.8.1 lease 600 s

@@ -88,6 +88,20 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 - **Tests:** `make check` passes (TCG + KVM self-tests, 113 network checks). All 19 new login checks fail on the `master` kernel.
 - **Open:** passwords are compared in plain text in RAM. A proper password hash (needs SHA-256) comes with flash storage in WP5/WP6.
 
+### Status of WP0 (2026-11-14, branch `attack-surface`)
+
+- `measure/attack_surface.sh` puts LazyDaysOS and OpenWrt 19.07.10 x86-64 (factory defaults) into the `check_net.sh` topology and records:
+  - nmap scans of all ports from the LAN and the WAN, plus IPv6 on the LAN
+  - the router's own view (OpenWrt over its serial console)
+  - login with no or empty password
+- `measure/reachable.py` counts the stack lines that run only because of outside input (fuzz corpus under gcov).
+- **Write-up:** [attack-surface.md](attack-surface.md). Headline results:
+  - Factory OpenWrt: **root over SSH and an admin web session with an empty password from any LAN device**; SSH, DNS and HTTP on the LAN over IPv4 and IPv6; dnsmasq bound to the WAN address behind the firewall; 117 packages, 23 MB RAM in use.
+  - LazyDaysOS: TCP 80 only, behind a login with no default password, nothing listening on the WAN except the DHCP client; a 111 KB image, ~0.7 MB RAM.
+  - **692 of 3,454 network-stack lines are reachable from the WAN**, none of them in the HTTP parser, login or API.
+- Found on the LazyDaysOS side: from the WAN, UDP 67/68 and TCP 80 look "open|filtered"/"filtered" instead of closed (easy to fingerprint).
+- Not done: the stock TP-Link firmware (needs the device), and line-level exposure for OpenWrt.
+
 ### Status of WP2 (2026-11-14, branch `fuzzing`)
 
 - **Harness** (`fuzz/`): the network stack compiled unchanged for Linux with AddressSanitizer and UndefinedBehaviorSanitizer.
