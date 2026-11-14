@@ -349,7 +349,7 @@ function applyView() {
     n.g.setAttribute("transform", `translate(${n.def.x},${n.def.y}) scale(${s})`);
     // Semantic zoom: a label appears once it would be readable
     const size = n.role === "customer" ? 13 : 16;
-    n.label.style.display = size * v.k * s >= 8.5 ? "" : "none";
+    n.label.style.display = size * v.k >= 8.5 ? "" : "none";
   }
 }
 function fit(b) {
@@ -762,9 +762,9 @@ function drawTimeline() {
 
   // Route changes and looping packets: two small charts sharing the time axis, each with its own scale
   const band = (y0, idx, label, colour) => {
-    const top = Math.max(1, ...S.routing.map((r) => r[idx]));
+    const peak = Math.max(0, ...S.routing.map((r) => r[idx])), top = Math.max(1, peak);
     g.textAlign = "left"; g.fillStyle = col.ink2; g.fillText(label, left, y0 - 9);
-    g.textAlign = "right"; g.fillStyle = col.muted; g.fillText(`peak ${top < 10 ? top.toFixed(1) : Math.round(top)}/s`, W - right, y0 - 9);
+    g.textAlign = "right"; g.fillStyle = col.muted; g.fillText(peak ? `peak ${peak < 10 ? peak.toFixed(1) : Math.round(peak)}/s` : "none", W - right, y0 - 9);
     g.strokeStyle = col.axis; g.lineWidth = 1;
     g.beginPath(); g.moveTo(left, y0 + bandH + 0.5); g.lineTo(W - right, y0 + bandH + 0.5); g.stroke();
     if (S.routing.length < 2) return;
