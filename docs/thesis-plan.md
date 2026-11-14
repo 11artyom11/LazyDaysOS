@@ -88,6 +88,23 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 - **Tests:** `make check` passes (TCG + KVM self-tests, 113 network checks). All 19 new login checks fail on the `master` kernel.
 - **Open:** passwords are compared in plain text in RAM. A proper password hash (needs SHA-256) comes with flash storage in WP5/WP6.
 
+### Routing resilience and security: the metro lab (2026-11-14, branch `rip`)
+
+**Setup:** RIPv2 in the kernel (`kernel/net/rip.c`), and a provider-style network of 28 LazyDaysOS routers in GNS3 (core full mesh, dual-homed aggregation and access) with 16 customers pinging a server every 200 ms. Measured on the live dashboard (`gns3/net_ui.py`) with RIP timers 5/30/20 s:
+
+| Event | Customers affected | Outage | Notes |
+|---|---|---|---|
+| Cable cut C1–A1 (NICs see link down) | H1, H2 | 3.3–3.5 s | detour 3 → 5 routers, then 4 once RIP settles |
+| Cable cut C1–C2 | H3, H4, H11, H12 | 2.2–2.4 s | |
+| Silent failure C1–A1 (frames vanish, link up) | H1, H2 | **27.7 s** | only the RIP timeout (30 s) notices: detection dominates outage time |
+| Restoring a link | none | 0 | paths shift back without loss |
+| **Route hijack**: X7 misconfigured to speak RIP to its customer, compromised H7 announces two /25s of the server network | **all 16** | until removed | 28/28 routers hijacked within ~3 s; traffic loops between X7 and H7 until its TTL runs out |
+| Stopping the hijack and fixing X7 | all 16 | ~47 s, then a second ~2 s outage | the forged routes live until the RIP timeout; then count to infinity loops packets through the core (~80 TTL expiries/s) |
+
+**Takeaways for the thesis:**
+- One misconfigured port plus one compromised device takes down the whole network for as long as the attacker likes, and the cleanup itself causes routing loops.
+- **Next:** RIPv2 authentication (RFC 4822, HMAC-SHA256) to reject the forged routes, with this experiment as the before/after test. Faster failure detection for silent failures (a BFD-style hello) would cut the 28 s outage.
+
 ### Status of WP0 (2026-11-14, branch `attack-surface`)
 
 - `measure/attack_surface.sh` puts LazyDaysOS and OpenWrt 19.07.10 x86-64 (factory defaults) into the `check_net.sh` topology and records:

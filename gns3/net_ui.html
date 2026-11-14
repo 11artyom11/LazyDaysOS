@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LazyDaysOS metro</title>
+<style>
+:root {
+  --bg: #f3f5f9; --panel: #ffffff; --panel-2: #f8fafc; --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
+  --ok: #16a34a; --ok-soft: rgba(22,163,74,.14); --warn: #d97706; --warn-soft: rgba(217,119,6,.14);
+  --bad: #dc2626; --bad-soft: rgba(220,38,38,.13); --loop: #7c3aed; --loop-soft: rgba(124,58,237,.14);
+  --core: #0f766e; --agg: #0369a1; --access: #475569; --link: #94a3b8; --load: #0ea5e9;
+  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.05);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1020; --panel: #121a2e; --panel-2: #0f1628; --text: #e2e8f0; --muted: #94a3b8; --line: #1f2a44;
+    --core: #2dd4bf; --agg: #38bdf8; --access: #94a3b8; --link: #475569; --loop: #a78bfa;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1020; --panel: #121a2e; --panel-2: #0f1628; --text: #e2e8f0; --muted: #94a3b8; --line: #1f2a44;
+  --core: #2dd4bf; --agg: #38bdf8; --access: #94a3b8; --link: #475569; --loop: #a78bfa;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; display: flex; flex-direction: column; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.title { font-weight: 650; font-size: 16px; }
+.subtitle { font-size: 12.5px; color: var(--muted); }
+.spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; } .pill.ok .dot { background: var(--ok); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; } .pill.warn .dot { background: var(--warn); }
+.pill.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; } .pill.bad .dot { background: var(--bad); }
+.pill.loop { color: var(--loop); background: var(--loop-soft); border-color: transparent; } .pill.loop .dot { background: var(--loop); }
+button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 9px; padding: 6px 11px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.danger { color: var(--bad); }
+button.primary { background: var(--core); border-color: transparent; color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 430px; min-height: 0; }
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+.map { position: relative; min-height: 420px; }
+.map svg { width: 100%; height: 100%; display: block; }
+.legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
+.legend b { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+.side { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; min-height: 0; }
+section { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 650; }
+.cards { display: grid; gap: 8px; }
+.card { border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; background: var(--panel-2); }
+.card .name { font-weight: 600; font-size: 13.5px; }
+.card .why { font-size: 12.5px; color: var(--muted); margin: 2px 0 7px; }
+.card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.action { display: grid; gap: 4px; font-size: 13px; }
+.action .what { font-weight: 600; }
+.measure { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 13px; }
+.measure span:nth-child(even) { font-family: var(--mono); text-align: right; }
+.customers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cust { border: 1px solid var(--line); border-radius: 9px; padding: 5px 7px; background: var(--panel-2); font-size: 12px; }
+.cust .top { display: flex; justify-content: space-between; font-weight: 650; }
+.cust .meta { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.cust.ok { border-color: rgba(22,163,74,.35); } .cust.degraded { border-color: var(--warn); }
+.cust.down { border-color: var(--bad); background: var(--bad-soft); } .cust.looping { border-color: var(--loop); background: var(--loop-soft); }
+.strip { display: flex; gap: 1px; margin-top: 4px; height: 6px; }
+.strip i { flex: 1; border-radius: 1px; background: var(--ok); }
+.strip i.lost { background: var(--bad); } .strip i.loop { background: var(--loop); }
+.charts { display: grid; gap: 8px; }
+.chart { position: relative; }
+.chart .label { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+.chart canvas { width: 100%; height: 56px; display: block; }
+.log { list-style: none; margin: 0; padding: 0; font-size: 12.5px; max-height: 260px; overflow-y: auto; }
+.log li { padding: 4px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 62px 1fr; gap: 8px; }
+.log li .t { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.log li.action { font-weight: 600; } .log li.outage { color: var(--bad); } .log li.recovered { color: var(--ok); }
+.log li.summary { color: var(--core); font-weight: 600; } .log li.path { color: var(--muted); }
+.pop { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 12px; min-width: 230px; font-size: 13px; }
+.pop .head { font-weight: 650; margin-bottom: 4px; }
+.pop .kv { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+.pop .kv b { color: var(--text); font-weight: 500; font-family: var(--mono); font-size: 12px; }
+.pop .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.banner { padding: 8px 14px; background: var(--bad-soft); color: var(--bad); font-size: 13px; display: none; }
+svg .linkhit { stroke: transparent; stroke-width: 12; cursor: pointer; }
+svg .node { cursor: pointer; }
+svg text { font-family: system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="title">LazyDaysOS metro: routing resilience &amp; security</div>
+    <div class="subtitle" id="subtitle">28 routers speaking RIPv2 · 16 customers pinging server S1</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill" id="p-routing"><span class="dot"></span><span>routing</span></span>
+  <span class="pill" id="p-service"><span class="dot"></span><span>service</span></span>
+  <span class="pill" id="p-loops"><span class="dot"></span><span>loops</span></span>
+  <span class="pill" id="p-hijack"><span class="dot"></span><span>hijack</span></span>
+  <button id="theme" type="button">◐</button>
+  <button id="reset" type="button" class="danger">Reset all</button>
+</header>
+<div class="banner" id="banner"></div>
+<main>
+  <div class="map" id="map">
+    <svg id="svg" aria-label="Network map"></svg>
+    <div class="legend">
+      <span><b style="background:var(--core)"></b>core</span><span><b style="background:var(--agg)"></b>aggregation</span>
+      <span><b style="background:var(--access)"></b>access</span>
+      <span><i style="background:var(--load)"></i>&gt; 250 kbit/s (mostly in-band monitoring)</span><span><i style="background:var(--bad)"></i>cut</span>
+      <span><i style="background:var(--warn)"></i>silent failure</span><span><b style="background:var(--loop)"></b>hijacked route</span>
+      <span>click a link or a router</span>
+    </div>
+  </div>
+  <div class="side">
+    <section>
+      <h2>Last action</h2>
+      <div class="action" id="action"><span class="muted">Nothing yet. Break something.</span></div>
+    </section>
+    <section>
+      <h2>Customers → server S1 <span class="muted" id="served"></span></h2>
+      <div class="customers" id="customers"></div>
+    </section>
+    <section>
+      <h2>Scenarios</h2>
+      <div class="cards">
+        <div class="card"><div class="name">Cable cut</div>
+          <div class="why">Both NICs see the link go down, so RIP withdraws the routes at once. Pick any link on the map, or:</div>
+          <div class="row"><button data-cut="C1|A1">Cut C1–A1</button><button data-cut="C1|C2">Cut C1–C2</button></div></div>
+        <div class="card"><div class="name">Silent failure</div>
+          <div class="why">Frames vanish but both NICs keep link (a failed switch in between, a dead fibre amplifier). Only the RIP timeout (30 s here) notices.</div>
+          <div class="row"><button data-silent="C1|A1">Silence C1–A1</button><button data-silent="C1|C2">Silence C1–C2</button></div></div>
+        <div class="card"><div class="name">Router crash</div>
+          <div class="why">A router stops. Its neighbours see their links go down; customers behind it lose service, the rest reroute.</div>
+          <div class="row"><button data-stop="A1">Crash A1</button><button data-stop="C4">Crash C4</button><button data-start="A1">Start A1</button><button data-start="C4">Start C4</button></div></div>
+        <div class="card"><div class="name">Count to infinity</div>
+          <div class="why">Withdraw the server network (cut C1–S1). Routers can keep re-learning the dead route from each other until metric 16: packets loop until their TTL runs out.</div>
+          <div class="row"><button data-scenario="withdraw">Withdraw server network</button></div></div>
+        <div class="card"><div class="name">Route hijack</div>
+          <div class="why">RIPv2 has no authentication. If access router X7 speaks RIP towards its customer, a compromised H7 can announce more specific routes to the server (two /25s beat the /24 everywhere) and pull the traffic of the whole network.</div>
+          <div class="row"><button data-scenario="misconfigure">1. Misconfigure X7</button><button data-scenario="hijack">2. Start hijack</button>
+            <button data-scenario="stop_hijack">Stop hijack</button><button data-scenario="fix">Fix X7</button></div></div>
+      </div>
+    </section>
+    <section>
+      <h2>Routing</h2>
+      <div class="charts">
+        <div class="chart"><div class="label"><span>route changes / s (all routers)</span><span id="v-churn" class="mono"></span></div><canvas id="c-churn"></canvas></div>
+        <div class="chart"><div class="label"><span>packets dying in loops / s (TTL expired)</span><span id="v-loops" class="mono"></span></div><canvas id="c-loops"></canvas></div>
+        <div class="chart"><div class="label"><span>customers with service</span><span id="v-served" class="mono"></span></div><canvas id="c-served"></canvas></div>
+      </div>
+    </section>
+    <section>
+      <h2>Timeline</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const S = { nodes: {}, links: {}, tick: null, hist: { churn: [], loops: [], served: [] }, seq: 0, pop: null };
+const HIST = 240;                                // half-second samples: two minutes
+
+function svgEl(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function fmtBps(b) { return b >= 1e6 ? (b / 1e6).toFixed(1) + " Mbit/s" : b >= 1e3 ? (b / 1e3).toFixed(0) + " kbit/s" : b + " bit/s"; }
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || r.status); }
+}
+
+/* ---------- map ---------- */
+let view = null;
+function buildMap(state) {
+  const svg = $("svg");
+  svg.replaceChildren();
+  S.nodes = {}; S.links = {};
+  const xs = state.nodes.map((n) => n.x), ys = state.nodes.map((n) => n.y);
+  const pad = 70;
+  view = { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, w: Math.max(...xs) - Math.min(...xs) + 2 * pad, h: Math.max(...ys) - Math.min(...ys) + 2 * pad };
+  svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+  const byName = Object.fromEntries(state.nodes.map((n) => [n.name, n]));
+  const gl = svgEl("g", {}, svg), gn = svgEl("g", {}, svg);
+  for (const l of state.links) {
+    const a = byName[l.a], b = byName[l.b];
+    if (!a || !b) continue;
+    const line = svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, "stroke-width": 2, "stroke-linecap": "round" }, gl);
+    const hit = svgEl("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "linkhit" }, gl);
+    hit.addEventListener("click", (e) => openLink(l, e));
+    S.links[l.id] = { def: l, line, state: l.state, bps: 0 };
+  }
+  for (const n of state.nodes) {
+    const g = svgEl("g", { class: "node", transform: `translate(${n.x},${n.y})` }, gn);
+    let shape;
+    if (n.kind === "router") {
+      const r = n.role === "core" ? 22 : n.role === "aggregation" ? 18 : 15;
+      shape = svgEl("circle", { r, "stroke-width": 3.5 }, g);
+      svgEl("text", { y: 4.5, "text-anchor": "middle", "font-size": n.role === "access" ? 11 : 13, "font-weight": 700, fill: "#fff" }, g).textContent = n.name;
+    } else {
+      shape = svgEl("rect", { x: -14, y: -11, width: 28, height: 22, rx: 5, "stroke-width": 2 }, g);
+      svgEl("text", { y: 4, "text-anchor": "middle", "font-size": 10, "font-weight": 700, fill: "#fff" }, g).textContent = n.name;
+    }
+    g.addEventListener("click", (e) => openNode(n, e));
+    S.nodes[n.name] = { def: n, g, shape };
+  }
+  paintMap();
+}
+
+function paintMap() {
+  const t = S.tick;
+  for (const [id, l] of Object.entries(S.links)) {
+    const info = t && t.links[id];
+    const state = (info && info.state) || l.def.state;
+    const bps = info ? info.bps : 0;
+    l.state = state; l.bps = bps;
+    const loaded = bps > 250000;
+    l.line.setAttribute("stroke", state === "cut" ? css("--bad") : state === "silent" ? css("--warn") : loaded ? css("--load") : css("--link"));
+    l.line.setAttribute("stroke-dasharray", state === "up" ? "" : "6 5");
+    l.line.setAttribute("stroke-width", state === "up" ? (loaded ? 2.5 + Math.min(5, Math.log10(bps / 250000) * 3) : 2) : 3);
+  }
+  const flows = Object.fromEntries(((t && t.flows) || []).map((f) => [f.host, f]));
+  for (const [name, n] of Object.entries(S.nodes)) {
+    if (n.def.kind === "router") {
+      const r = t && t.routers[name];
+      const role = n.def.role === "core" ? "--core" : n.def.role === "aggregation" ? "--agg" : "--access";
+      const down = !r || r.state !== "up";
+      n.shape.setAttribute("fill", down ? css("--line") : css(role));
+      n.shape.setAttribute("stroke", down ? css("--bad") : r.hijacked ? css("--loop") : r.churn > 0 ? css("--warn") : css("--panel"));
+    } else {
+      const f = flows[name];
+      const color = n.def.role === "server" ? css("--core") : n.def.role === "noc" ? css("--agg")
+        : !f ? css("--line") : { ok: css("--ok"), degraded: css("--warn"), down: css("--bad"), looping: css("--loop") }[f.state] || css("--line");
+      n.shape.setAttribute("fill", color);
+      n.shape.setAttribute("stroke", css("--panel"));
+    }
+  }
+}
+
+function closePop() { if (S.pop) { S.pop.remove(); S.pop = null; } }
+function popAt(evt, html) {
+  closePop();
+  const pop = document.createElement("div");
+  pop.className = "pop";
+  pop.innerHTML = html;
+  const box = $("map").getBoundingClientRect();
+  pop.style.left = Math.min(evt.clientX - box.left + 10, box.width - 260) + "px";
+  pop.style.top = Math.min(evt.clientY - box.top + 10, box.height - 200) + "px";
+  $("map").appendChild(pop);
+  S.pop = pop;
+  evt.stopPropagation();
+  return pop;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function openLink(def, evt) {
+  const l = S.links[def.id];
+  const pop = popAt(evt, `<div class="head">${esc(def.a)} eth${def.a_port} — ${esc(def.b)} eth${def.b_port}</div>
+    <div class="kv"><span>network</span><b>${esc(def.network || "host link")}</b><span>state</span><b>${esc(l.state)}</b><span>load</span><b>${fmtBps(l.bps)}</b></div>
+    <div class="row"><button data-a="cut">Cut cable</button><button data-a="silent">Silent failure</button><button data-a="restore">Restore</button></div>`);
+  pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); post("/api/link", { id: def.id, action: b.dataset.a }); });
+}
+
+function openNode(def, evt) {
+  const t = S.tick;
+  if (def.kind === "router") {
+    const r = (t && t.routers[def.name]) || {};
+    const pop = popAt(evt, `<div class="head">${esc(def.name)} <span class="muted">(${esc(def.role)})</span></div>
+      <div class="kv"><span>state</span><b>${esc(r.state || "?")}</b><span>routes</span><b>${r.routes ?? "–"} of ${t ? t.network.expected : "?"}</b>
+      <span>to the server via</span><b>${esc(r.server_via || "–")}</b><span>route changes/s</span><b>${r.churn ?? "–"}</b>
+      <span>TTL expired/s</span><b>${r.ttl_exceeded ?? "–"}</b><span>CPU</span><b>${r.cpu != null ? (r.cpu / 10).toFixed(1) + "%" : "–"}</b>
+      <span>hijacked</span><b>${r.hijacked ? "yes: routes the server to H7" : "no"}</b></div>
+      <div class="row"><button data-a="stop" class="danger">Crash</button><button data-a="start">Start</button></div>`);
+    pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); post("/api/node", { name: def.name, action: b.dataset.a }); });
+  } else {
+    const f = ((t && t.flows) || []).find((x) => x.host === def.name);
+    popAt(evt, `<div class="head">${esc(def.name)} <span class="muted">(${esc(def.role)})</span></div>
+      <div class="kv"><span>address</span><b>${esc(def.cidr || "")}</b>${f ? `<span>service</span><b>${esc(f.state)}</b><span>loss (5 s)</span><b>${f.loss}%</b>
+      <span>latency</span><b>${f.rtt ?? "–"} ms</b><span>path</span><b>${f.hops ?? "–"} routers</b>${f.error ? `<span>last error</span><b>${esc(f.error)}</b>` : ""}` : ""}</div>`);
+  }
+}
+document.addEventListener("click", (e) => { if (S.pop && !S.pop.contains(e.target)) closePop(); });
+
+/* ---------- side panels ---------- */
+function pill(id, cls, text) { const p = $(id); p.className = "pill " + cls; p.lastElementChild.textContent = text; }
+
+function renderTick(t) {
+  const n = t.network;
+  pill("p-routing", n.converged ? "ok" : n.up < n.routers ? "bad" : "warn",
+       n.converged ? `routing converged · ${n.networks} networks` : `routing changing${n.up < n.routers ? ` · ${n.routers - n.up} routers unreachable` : ""}`);
+  pill("p-service", n.served === n.customers ? "ok" : n.served === 0 ? "bad" : "warn", `${n.served}/${n.customers} customers served`);
+  pill("p-loops", n.loops > 0 ? "loop" : "", n.loops > 0 ? `${n.loops} looping packets/s` : "no loops");
+  pill("p-hijack", n.hijacked.length ? "loop" : t.scenario.misconfigured ? "warn" : "",
+       n.hijacked.length ? `${n.hijacked.length}/${n.routers} routers hijacked` : t.scenario.misconfigured ? "X7 misconfigured" : "no hijack");
+  $("served").textContent = `${n.served}/${n.customers} served`;
+
+  const a = t.action;
+  if (a) {
+    const since = (x) => x ? (x - a.t0).toFixed(1) + " s" : "…";
+    $("action").innerHTML = `<span class="what">${esc(a.text)}</span>
+      <div class="measure"><span>elapsed</span><span>${a.elapsed.toFixed(1)} s</span>
+      <span>all customers served again after</span><span>${since(a.service_at)}</span>
+      <span>routing converged after</span><span>${since(a.converged_at)}</span></div>`;
+  }
+  const box = $("customers");
+  if (box.children.length !== t.flows.length) {
+    box.replaceChildren(...t.flows.map((f) => {
+      const d = document.createElement("div");
+      d.innerHTML = `<div class="top"><span></span><span class="st"></span></div><div class="meta"></div><div class="strip"></div>`;
+      d.dataset.host = f.host;
+      return d;
+    }));
+  }
+  t.flows.forEach((f, i) => {
+    const d = box.children[i];
+    d.className = "cust " + f.state;
+    d.querySelector(".top span").textContent = f.host;
+    d.querySelector(".st").textContent = f.state === "ok" ? "" : f.state;
+    d.querySelector(".meta").textContent = f.state === "unknown" ? "starting…" :
+      `${f.loss}% loss · ${f.hops ?? "–"} hops · ${f.rtt ?? "–"} ms`;
+    const strip = d.querySelector(".strip");
+    const h = f.history || [];
+    if (strip.children.length !== h.length) strip.replaceChildren(...h.map(() => document.createElement("i")));
+    h.forEach((v, k) => strip.children[k].className = v === 1 ? "" : v === 2 ? "loop" : "lost");
+  });
+  push(S.hist.churn, n.churn); push(S.hist.loops, n.loops); push(S.hist.served, n.served);
+  $("v-churn").textContent = n.churn; $("v-loops").textContent = n.loops; $("v-served").textContent = `${n.served}/${n.customers}`;
+  chart("c-churn", S.hist.churn, css("--warn"));
+  chart("c-loops", S.hist.loops, css("--loop"));
+  chart("c-served", S.hist.served, css("--ok"), n.customers);
+  paintMap();
+  if (S.pop === null) { /* keep popovers static while open */ }
+}
+
+function push(a, v) { a.push(v); if (a.length > HIST) a.shift(); }
+function chart(id, data, color, max) {
+  const c = $(id), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = css("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
+  const top = max || Math.max(1, ...data);
+  if (!data.length) return;
+  g.beginPath();
+  data.forEach((v, i) => { const x = w - (data.length - 1 - i) * (w / (HIST - 1)), y = h - 3 - (v / top) * (h - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = color; g.lineWidth = 2; g.lineJoin = "round"; g.stroke();
+  g.lineTo(w, h); g.lineTo(w - (data.length - 1) * (w / (HIST - 1)), h); g.closePath();
+  g.globalAlpha = .12; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
+}
+
+function addLog(ev) {
+  const li = document.createElement("li");
+  li.className = ev.kind;
+  li.innerHTML = `<span class="t"></span><span></span>`;
+  li.firstChild.textContent = new Date(ev.ts * 1000).toLocaleTimeString([], { hour12: false });
+  li.lastChild.textContent = ev.text;
+  $("log").prepend(li);
+  while ($("log").children.length > 200) $("log").lastChild.remove();
+}
+
+/* ---------- wiring ---------- */
+function linkBetween(a, b) {
+  return Object.values(S.links).find((l) => (l.def.a === a && l.def.b === b) || (l.def.a === b && l.def.b === a));
+}
+document.querySelectorAll("[data-cut],[data-silent]").forEach((b) => b.onclick = () => {
+  const [x, y] = (b.dataset.cut || b.dataset.silent).split("|");
+  const l = linkBetween(x, y);
+  if (l) post("/api/link", { id: l.def.id, action: b.dataset.cut ? "cut" : "silent" });
+});
+document.querySelectorAll("[data-stop],[data-start]").forEach((b) => b.onclick = () =>
+  post("/api/node", { name: b.dataset.stop || b.dataset.start, action: b.dataset.stop ? "stop" : "start" }));
+document.querySelectorAll("[data-scenario]").forEach((b) => b.onclick = () => post("/api/scenario", { action: b.dataset.scenario }));
+$("reset").onclick = () => post("/api/scenario", { action: "reset" });
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("netui-theme", document.documentElement.dataset.theme); } catch (e) { /* ignore */ }
+  paintMap();
+};
+try { const t = localStorage.getItem("netui-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* ignore */ }
+
+async function boot() {
+  try {
+    const r = await fetch("/api/state");
+    const state = await r.json();
+    if (!r.ok) throw new Error(state.error);
+    $("banner").style.display = "none";
+    $("subtitle").textContent = `${state.nodes.filter((n) => n.kind === "router").length} routers speaking RIPv2 (timers ${state.timers} s) · `
+      + `${state.nodes.filter((n) => n.role === "customer").length} customers pinging server S1 (${state.server}) every 200 ms`;
+    buildMap(state);
+  } catch (e) {
+    $("banner").textContent = "Can't load the lab: " + e.message;
+    $("banner").style.display = "block";
+    setTimeout(boot, 3000);
+    return;
+  }
+  const es = new EventSource("/api/events");
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.seq <= S.seq) return;
+    S.seq = ev.seq;
+    if (ev.type === "tick") { S.tick = ev; renderTick(ev); }
+    else if (ev.type === "log") addLog(ev);
+  };
+}
+window.addEventListener("resize", () => S.tick && renderTick(S.tick));
+boot();
+</script>
+</body>
+</html>

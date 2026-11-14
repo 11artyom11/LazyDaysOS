@@ -113,6 +113,20 @@ The network stack (`kernel/net/*.c`, `kernel/random.c`, `kernel/cmdline.c`, `lib
 
 ### GNS3 lab (`gns3/`)
 
+- **Metro lab** (`gns3/metro.py`, `metro_lab.py`, `net_ui.py`): a provider-style network.
+  - Topology: 4 core routers in a full mesh, 8 aggregation routers dual-homed to the core, 16 access routers dual-homed to aggregation, one customer each. 28 routers, 54 links, servers S1/S2 on C1/C3, a NOC host on C2.
+  - Configuration: RIP timers 5,30,20, 32 MB per router. `metro.py` is the single definition (addresses, ports, layout) that both the builder and the dashboard import.
+  - `python3 gns3/metro_lab.py build|start|delete`: the routers boot `LazyDaysOS-metro.bin`, a copy. The project is created with **`auto_close: false`**: otherwise GNS3 closes a project, stopping every node, as soon as the last GUI client disconnects.
+  - `python3 gns3/net_ui.py` → http://localhost:8095. Inputs:
+    - a Python poller inside the NOC container reads every router's `/api/stats` in-band (≈10 KB/router/s, the dominant traffic on the map);
+    - each customer runs `ping -D -O -i 0.2` to S1 (loss, hops from the TTL, ICMP "time to live exceeded" = looping).
+  - Derived values: converged = every running router reports and no route changed for 3 s; served = a reply in the last second; outage and recovery times per action.
+  - Controls:
+    - cable cut = QEMU `set_link gns3-N off` on both ends, through the monitor port found in `ps`;
+    - silent failure = a GNS3 link filter `packet_loss: [100]` (a GNS3 *suspend* also takes the QEMU link down, so it isn't silent);
+    - router crash = node stop;
+    - route hijack: X7 rebooted with `rip` on every port, then H7 announces 10.200.1.0/25 and /128/25 with metric 1 from UDP port 520;
+    - reset.
 - `gns3/mesh_lab.py build [RxC] [--ram MB] [--timers U,T,G]` builds the project "LazyDaysOS mesh" (`MESH_PROJECT` for another name): an R×C torus of routers speaking RIP (default 10×10: 100 routers, 200 links), 32 MB each like the TL-WR841N, with netshoot hosts on R-0-0 and the farthest router.
   - Addresses are `10.1.(r*C+c).0/24` east, `10.2.(r*C+c).0/24` south.
   - It boots `~/GNS3/images/QEMU/LazyDaysOS-mesh.bin` (copied from `./LazyDaysOS.bin`), so the throughput lab's kernel is untouched.
