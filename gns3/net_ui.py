@@ -804,21 +804,58 @@ def scenario(action):
         link_action(lid, "cut")
         return "withdraw", "server network withdrawn (cable C1–S1 cut)"
     elif action == "reset":
-        if lab.hijacking:
-            subprocess.run(["docker", "exec", h7, "pkill", "-f", HIJACK_MARKER])
-            lab.hijacking = False
-        if lab.misconfigured:
-            set_x7(False)
-        for lid, state in list(lab.link_state.items()):
-            if state != "up":
-                link_action(lid, "restore")
-        for name, n in lab.nodes.items():
-            if n["status"] != "started":
-                gns3("POST", f"/projects/{lab.pid}/nodes/{n['node_id']}/start", {})
-        lab.discover()
-        return "reset", "reset: every link up, every router running, X7 fixed, no hijack"
+        return reset()
     else:
         raise ValueError("unknown scenario action")
+
+
+def reset():
+    """Undo everything that differs from the built network, in an order that can't trip
+    over itself, and say exactly what was undone"""
+    lab.discover()                      # fresh node states, not the last poll's
+    done, errors = [], []
+    publisher.queue.clear()
+    # Routers first: restoring a link needs the QEMU monitor of a running router
+    started = []
+    for name, n in lab.nodes.items():
+        if n["status"] != "started":
+            try:
+                gns3("POST", f"/projects/{lab.pid}/nodes/{n['node_id']}/start", {})
+                started.append(name)
+            except Exception as e:
+                errors.append(f"start {name}: {e}")
+    if started:
+        done.append("started " + ", ".join(started))
+    if lab.hijacking:
+        subprocess.run(["docker", "exec", lab.container(metro.HIJACKER), "pkill", "-f", HIJACK_MARKER])
+        lab.hijacking = False
+        done.append(f"stopped {metro.HIJACKER}'s announcements")
+    if lab.misconfigured:
+        try:
+            set_x7(False)
+            done.append(f"fixed {metro.MISCONFIGURABLE}")
+        except Exception as e:
+            errors.append(f"fix {metro.MISCONFIGURABLE}: {e}")
+    restored = []
+    for lid, state in list(lab.link_state.items()):
+        if state != "up" and lid in lab.links:
+            l = lab.links[lid]
+            try:
+                gns3("PUT", f"/projects/{lab.pid}/links/{lid}", {"suspend": False, "filters": {}})
+                for end, port in ((l["a"], l["a_port"]), (l["b"], l["b_port"])):
+                    if end in lab.routers and end not in started:     # a fresh boot has its links up
+                        monitor(end, f"set_link gns3-{port} on")
+                lab.link_state[lid] = "up"
+                restored.append(f"{l['a']}–{l['b']}")
+            except Exception as e:
+                errors.append(f"restore {l['a']}–{l['b']}: {e}")
+    if restored:
+        done.append("restored " + ", ".join(restored))
+    lab.discover()
+    text = "reset: " + ("; ".join(done) if done else "nothing to undo, the network is as built")
+    if errors:
+        text += " (failed: " + "; ".join(errors) + ")"
+    return "reset", text
 
 
 def dispatch(path, body):
@@ -910,7 +947,8 @@ class Handler(BaseHTTPRequestHandler):
                     position = publisher.enqueue(describe(url.path, body), lambda: dispatch(url.path, body), target_of(body))
                     return self.reply(200, {"ok": True, "queued": position})
                 kind, text = dispatch(url.path, body)
-                return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text, target_of(body))})
+                return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text, target_of(body)),
+                                        "text": text})
             elif url.path == "/api/queue/clear":
                 publisher.queue.clear()
                 log("queue cleared", "queued")

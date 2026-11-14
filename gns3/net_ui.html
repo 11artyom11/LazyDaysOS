@@ -122,6 +122,10 @@ table.results tr.interrupted td { color: var(--muted); font-style: italic; }
 .pop .kv { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
 .pop .kv b { color: var(--text); font-weight: 500; font-family: var(--mono); font-size: 12px; }
 .pop .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 30; max-width: 420px; padding: 10px 14px; border-radius: 11px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 13px; }
+.toast.error { border-color: var(--bad); color: var(--bad); }
+.toast.ok { border-color: var(--ok); }
 .banner { padding: 8px 14px; background: var(--bad-soft); color: var(--bad); font-size: 13px; display: none; }
 svg .linkhit { stroke: transparent; stroke-width: 12; cursor: pointer; }
 svg .node { cursor: pointer; }
@@ -222,9 +226,30 @@ function svgEl(tag, attrs, parent) {
 }
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function fmtBps(b) { return b >= 1e6 ? (b / 1e6).toFixed(1) + " Mbit/s" : b >= 1e3 ? (b / 1e3).toFixed(0) + " kbit/s" : b + " bit/s"; }
-async function post(path, body) {
-  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || r.status); }
+// Every action says what happened: done, queued, failed, or the dashboard backend isn't reachable
+let toastTimer = null;
+function toast(text, kind) {
+  let t = document.querySelector(".toast");
+  if (!t) { t = document.createElement("div"); document.body.appendChild(t); }
+  t.className = "toast " + (kind || "");
+  t.textContent = text;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), kind === "error" ? 10000 : 5000);
+}
+async function post(path, body, button) {
+  if (button) button.disabled = true;
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) toast("Failed: " + (res.error || r.status), "error");
+    else if (res.queued) toast(`Queued (#${res.queued} in line): runs when the network has settled.`);
+    else if (res.text) toast(res.text, "ok");
+    return res;
+  } catch (e) {
+    toast("Couldn't reach the dashboard backend (is gns3/net_ui.py running?). Nothing was changed.", "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 /* ---------- map ---------- */
@@ -506,7 +531,7 @@ document.querySelectorAll("[data-cut],[data-silent]").forEach((b) => b.onclick =
 document.querySelectorAll("[data-stop],[data-start]").forEach((b) => b.onclick = () =>
   act("/api/node", { name: b.dataset.stop || b.dataset.start, action: b.dataset.stop ? "stop" : "start" }));
 document.querySelectorAll("[data-scenario]").forEach((b) => b.onclick = () => act("/api/scenario", { action: b.dataset.scenario }));
-$("reset").onclick = () => post("/api/scenario", { action: "reset" });   // reset never waits
+$("reset").onclick = () => post("/api/scenario", { action: "reset" }, $("reset"));   // reset never waits
 $("rate").onchange = () => post("/api/rate", { poll: Number($("rate").value) });
 $("theme").onclick = () => {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
