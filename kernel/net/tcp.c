@@ -4,6 +4,7 @@
 #include <kio.h>
 #include <pit.h>
 #include "../heap.h"
+#include "../random.h"
 
 #define TCP_FIN             0x01
 #define TCP_SYN             0x02
@@ -92,6 +93,7 @@ struct tcp_conn
     uint32_t timewait_deadline_ms;
 
     uint32_t segments_sent;             /* tells whether an ACK was piggybacked */
+    uint32_t created_ms;                /* SYN arrival: the oldest half-open connection is evicted first */
 };
 
 struct tcp$listener
@@ -344,24 +346,99 @@ static struct tcp_conn* tcp$$find(uint32_t local_ip, uint16_t local_port, uint32
     return NULL;
 }
 
-/* A free slot, else the TIME_WAIT connection closest to expiry */
-static struct tcp_conn* tcp$$allocate(void)
+/* A free slot, else the TIME_WAIT connection closest to expiry, else (only when
+   allow_half_open) the oldest half-open connection. Evicting a half-open
+   connection loses nothing: its sequence numbers are SYN cookies, so its peer's
+   ACK recreates it. */
+static struct tcp_conn* tcp$$allocate(bool allow_half_open)
 {
-    struct tcp_conn* victim = NULL;
+    struct tcp_conn* waiting = NULL;
+    struct tcp_conn* half_open = NULL;
     for (int i = 0; i < TCP_MAX_CONNS; i++) {
         struct tcp_conn* c = &tcp$conns[i];
         if (c->state == TCP$CLOSED) {
             return c;
         }
         if (c->state == TCP$TIME_WAIT &&
-            (!victim || SEQ_LT(c->timewait_deadline_ms, victim->timewait_deadline_ms))) {
-            victim = c;
+            (!waiting || SEQ_LT(c->timewait_deadline_ms, waiting->timewait_deadline_ms))) {
+            waiting = c;
+        }
+        if (c->state == TCP$SYN_RCVD && (!half_open || SEQ_LT(c->created_ms, half_open->created_ms))) {
+            half_open = c;
         }
     }
-    if (victim) {
-        tcp$$release(victim, false);
+    if (waiting) {
+        tcp$$release(waiting, false);
+        return waiting;
     }
-    return victim;
+    if (half_open && allow_half_open) {
+        tcp_stats.syn_evicted++;
+        tcp$$release(half_open, false);
+        return half_open;
+    }
+    return NULL;
+}
+
+/* ---- initial sequence numbers: RFC 6528 + SYN cookies ---------------------
+
+    Every ISN is a SYN cookie (the construction Linux uses):
+
+        ISN = H1(tuple) + client ISN + (t << 24) + ((H2(tuple, t) + mss index) mod 2^24)
+
+    with t the uptime in 64 s units and H1/H2 keyed ChaCha20 hashes of the
+    addresses and ports. Over time the ISN grows by 2^24 per 64 s, about the 4 us
+    clock of RFC 6528, and without the key nobody can predict it from other
+    connections' ISNs. Because the ISN proves on its own that we sent a SYN-ACK
+    to that tuple recently (and which MSS the peer announced), the ACK that
+    completes the handshake can create the connection even if no state was kept:
+    when the table is full, SYNs are answered without allocating anything. */
+
+#define TCP$COOKIE_PERIOD_MS    64000
+#define TCP$COOKIE_MAX_AGE      1       /* periods: a cookie is valid for 64-128 s */
+
+static const uint16_t tcp$cookie_mss[4] = { TCP_DEFAULT_MSS, 1220, 1440, TCP_MSS };
+
+static uint32_t tcp$$hash(uint32_t local_ip, uint16_t local_port, uint32_t remote_ip, uint16_t remote_port, uint32_t round)
+{
+    static uint32_t secret[8];
+    static bool keyed = false;
+    if (!keyed) {
+        random_bytes(secret, sizeof(secret));
+        keyed = true;
+    }
+    const uint32_t nonce[3] = { local_ip, remote_ip, ((uint32_t)local_port << 16) | remote_port };
+    uint32_t block[16];
+    chacha20_block(secret, round, nonce, block);
+    return block[0];
+}
+
+static uint32_t tcp$$cookie(uint32_t local_ip, uint16_t local_port, uint32_t remote_ip, uint16_t remote_port,
+                            uint32_t client_isn, uint16_t peer_mss)
+{
+    uint32_t t = pit_uptime_ms() / TCP$COOKIE_PERIOD_MS;
+    uint32_t mss_index = 0;
+    for (uint32_t i = 0; i < 4; i++) {
+        if (tcp$cookie_mss[i] <= peer_mss) {
+            mss_index = i;
+        }
+    }
+    return tcp$$hash(local_ip, local_port, remote_ip, remote_port, 0) + client_isn + (t << 24) +
+           ((tcp$$hash(local_ip, local_port, remote_ip, remote_port, t + 1) + mss_index) & 0xFFFFFF);
+}
+
+/* The peer's MSS if cookie is one we issued to this tuple for this client ISN recently, else 0 */
+static uint16_t tcp$$cookie_check(uint32_t local_ip, uint16_t local_port, uint32_t remote_ip, uint16_t remote_port,
+                                  uint32_t client_isn, uint32_t cookie)
+{
+    uint32_t value = cookie - tcp$$hash(local_ip, local_port, remote_ip, remote_port, 0) - client_isn;
+    uint32_t now = pit_uptime_ms() / TCP$COOKIE_PERIOD_MS;
+    uint32_t age = (now - (value >> 24)) & 0xFF;
+    if (age > TCP$COOKIE_MAX_AGE || age > now) {
+        return 0;
+    }
+    uint32_t t = now - age;
+    uint32_t mss_index = (value - tcp$$hash(local_ip, local_port, remote_ip, remote_port, t + 1)) & 0xFFFFFF;
+    return mss_index < 4 ? tcp$cookie_mss[mss_index] : 0;
 }
 
 static uint16_t tcp$$parse_mss(const uint8_t* options, size_t len)
@@ -388,54 +465,122 @@ static uint16_t tcp$$parse_mss(const uint8_t* options, size_t len)
     return TCP_DEFAULT_MSS;
 }
 
-static void tcp$$accept_syn(uint32_t local_ip, uint32_t remote_ip, const struct tcp_header* h,
-                            const uint8_t* options, size_t options_len)
+static const struct tcp$listener* tcp$$listener(uint16_t port)
 {
-    uint16_t port = net_ntohs(h->dst_port);
-    const struct tcp$listener* listener = NULL;
     for (int i = 0; i < TCP_MAX_LISTENERS; i++) {
         if (tcp$listeners[i].port == port) {
-            listener = &tcp$listeners[i];
+            return &tcp$listeners[i];
         }
     }
-    if (!listener) {
-        tcp$$reset_reply(local_ip, remote_ip, h, 0);
-        return;
-    }
+    return NULL;
+}
 
-    struct tcp_conn* c = tcp$$allocate();
-    uint8_t* buf = c ? kmalloc(TCP_SNDBUF) : NULL;
-    if (!buf) {
-        tcp_stats.refused++;            /* silently: the client retries its SYN */
-        return;
-    }
-
-    uint32_t now = pit_uptime_ms();
+/* Set up a slot for a handshake in progress: SYN-ACK sent with ISN iss */
+static void tcp$$init_conn(struct tcp_conn* c, const struct tcp$listener* listener, uint32_t local_ip, uint16_t local_port,
+                           uint32_t remote_ip, uint16_t remote_port, uint32_t iss, uint32_t rcv_nxt,
+                           uint32_t window, uint16_t peer_mss, uint32_t now)
+{
     uint8_t* zero = (uint8_t*)c;
     for (size_t i = 0; i < sizeof(*c); i++) {
         zero[i] = 0;
     }
     c->state = TCP$SYN_RCVD;
-    c->cb = listener->cb;
-    c->buf = buf;
+    c->cb = listener ? listener->cb : NULL;
+    c->created_ms = now;
     c->local_ip = local_ip;
-    c->local_port = port;
+    c->local_port = local_port;
     c->remote_ip = remote_ip;
-    c->remote_port = net_ntohs(h->src_port);
-    c->rcv_nxt = net_ntohl(h->seq) + 1;
-    c->iss = net_random32();
-    c->snd_una = c->iss;
-    c->snd_nxt = c->iss + 1;
+    c->remote_port = remote_port;
+    c->rcv_nxt = rcv_nxt;
+    c->iss = iss;
+    c->snd_una = iss;
+    c->snd_nxt = iss + 1;
     c->snd_max = c->snd_nxt;
-    c->snd_wnd = net_ntohs(h->window);
-    c->peer_mss = tcp$$parse_mss(options, options_len);
+    c->snd_wnd = window;
+    c->peer_mss = peer_mss;
     c->rto_ms = TCP_RTO_INITIAL_MS;
-    c->rtt_timing = true;
-    c->rtt_seq = c->iss;
-    c->rtt_start_ms = now;
+}
 
-    tcp$$segment(c, TCP_SYN | TCP_ACK, c->iss, 0, 0, true);
-    tcp$$arm(c, now);
+static void tcp$$accept_syn(struct netdev* dev, uint32_t local_ip, uint32_t remote_ip, const struct tcp_header* h,
+                            const uint8_t* options, size_t options_len)
+{
+    uint16_t port = net_ntohs(h->dst_port);
+    uint16_t remote_port = net_ntohs(h->src_port);
+    const struct tcp$listener* listener = tcp$$listener(port);
+    if (!listener) {
+        tcp$$reset_reply(local_ip, remote_ip, h, 0);
+        return;
+    }
+    if (listener->cb && listener->cb->admit && !listener->cb->admit(dev, remote_ip)) {
+        tcp_stats.filtered++;           /* silently, like a firewall: no SYN-ACK, no RST */
+        return;
+    }
+
+    uint32_t now = pit_uptime_ms();
+    uint32_t client_isn = net_ntohl(h->seq);
+    uint16_t peer_mss = tcp$$parse_mss(options, options_len);
+    uint32_t iss = tcp$$cookie(local_ip, port, remote_ip, remote_port, client_isn, peer_mss);
+
+    struct tcp_conn* c = tcp$$allocate(false);
+    if (c) {
+        /* Room to spare: keep state, so a lost SYN-ACK is retransmitted */
+        tcp$$init_conn(c, listener, local_ip, port, remote_ip, remote_port, iss, client_isn + 1,
+                       net_ntohs(h->window), peer_mss, now);
+        c->rtt_timing = true;
+        c->rtt_seq = c->iss;
+        c->rtt_start_ms = now;
+        tcp$$segment(c, TCP_SYN | TCP_ACK, c->iss, 0, 0, true);
+        tcp$$arm(c, now);
+        return;
+    }
+
+    /* Table full: answer without keeping anything; the cookie brings the connection back */
+    struct tcp_conn stateless;
+    tcp$$init_conn(&stateless, listener, local_ip, port, remote_ip, remote_port, iss, client_isn + 1,
+                   net_ntohs(h->window), peer_mss, now);
+    tcp$$segment(&stateless, TCP_SYN | TCP_ACK, iss, 0, 0, true);
+    tcp_stats.syn_cookies_sent++;
+}
+
+/*
+    An ACK for a connection we have no state for: if it acknowledges one of our
+    SYN cookies, recreate the half-open connection so the normal handshake path
+    completes it (and handles any data in the segment). *silent is set when the
+    segment must be dropped without a reset (refused by admit(), or no slot free:
+    the peer retransmits).
+*/
+static struct tcp_conn* tcp$$accept_cookie(struct netdev* dev, uint32_t local_ip, uint32_t remote_ip,
+                                           const struct tcp_header* h, bool* silent)
+{
+    uint16_t port = net_ntohs(h->dst_port);
+    uint16_t remote_port = net_ntohs(h->src_port);
+    uint32_t seq = net_ntohl(h->seq);
+    uint32_t ack = net_ntohl(h->ack);
+    *silent = false;
+
+    const struct tcp$listener* listener = tcp$$listener(port);
+    if (!listener) {
+        return NULL;
+    }
+    if (listener->cb && listener->cb->admit && !listener->cb->admit(dev, remote_ip)) {
+        tcp_stats.filtered++;
+        *silent = true;
+        return NULL;
+    }
+    uint16_t peer_mss = tcp$$cookie_check(local_ip, port, remote_ip, remote_port, seq - 1, ack - 1);
+    if (peer_mss == 0) {
+        return NULL;
+    }
+    struct tcp_conn* c = tcp$$allocate(true);
+    if (!c) {
+        tcp_stats.refused++;
+        *silent = true;
+        return NULL;
+    }
+    tcp$$init_conn(c, listener, local_ip, port, remote_ip, remote_port, ack - 1, seq,
+                   net_ntohs(h->window), peer_mss, pit_uptime_ms());
+    tcp_stats.syn_cookies_accepted++;
+    return c;
 }
 
 /* ---- receiving ------------------------------------------------------------ */
@@ -502,7 +647,6 @@ static void tcp$$ooo_drain(struct tcp_conn* c)
 
 void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t header_len)
 {
-    (void)dev;
     const struct ipv4_header* ip = (const struct ipv4_header*)packet;
     const struct tcp_header* h = (const struct tcp_header*)(packet + header_len);
     size_t seg_len = len - header_len;
@@ -538,12 +682,20 @@ void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
     }
     if (!c) {
         if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN) {
-            tcp$$accept_syn(local_ip, remote_ip, h, (const uint8_t*)h + TCP$HEADER_LEN,
+            tcp$$accept_syn(dev, local_ip, remote_ip, h, (const uint8_t*)h + TCP$HEADER_LEN,
                             tcp_header_len - TCP$HEADER_LEN);
-        } else {
-            tcp$$reset_reply(local_ip, remote_ip, h, data_len);
+            return;
         }
-        return;
+        bool silent = false;
+        if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_ACK) {
+            c = tcp$$accept_cookie(dev, local_ip, remote_ip, h, &silent);
+        }
+        if (!c) {
+            if (!silent) {
+                tcp$$reset_reply(local_ip, remote_ip, h, data_len);
+            }
+            return;
+        }
     }
 
     if (flags & TCP_RST) {
@@ -582,6 +734,13 @@ void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
     if (c->state == TCP$SYN_RCVD) {
         if (ack != c->snd_nxt) {
             tcp$$reset_reply(local_ip, remote_ip, h, data_len);
+            return;
+        }
+        /* Only a completed handshake gets a send buffer */
+        if ((c->buf = kmalloc(TCP_SNDBUF)) == NULL) {
+            tcp_stats.refused++;
+            tcp$$reset_reply(local_ip, remote_ip, h, data_len);
+            tcp$$release(c, false);
             return;
         }
         c->snd_una = ack;

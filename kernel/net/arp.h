@@ -10,6 +10,7 @@
 #define ARP_REACHABLE_MS    (5 * 60 * 1000)     /* forget a mapping after 5 minutes */
 #define ARP_RETRY_MS        1000
 #define ARP_MAX_REQUESTS    3                   /* then drop the held packet, ICMP host unreachable */
+#define ARP_MAX_INCOMPLETE  16                  /* unresolved entries; the rest is kept for confirmed neighbours */
 
 /* Ethernet-layer handler for EtherType 0x0806 */
 void arp_receive(struct netdev* dev, const uint8_t* payload, size_t len);
@@ -40,6 +41,7 @@ struct arp_stats
     uint32_t held_replaced;             /* held packet replaced by a newer one */
     uint32_t held_dropped;              /* resolution failed */
     uint32_t table_full;
+    uint32_t incomplete_evicted;        /* unresolved entry replaced by a newer resolution */
 };
 
 extern struct arp_stats arp_stats;

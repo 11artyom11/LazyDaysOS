@@ -9,6 +9,7 @@
 #include "../../heap.h"
 #include "../../hwio.h"
 #include "../../isr.h"
+#include "../../random.h"
 #include "../../net/netdev.h"
 #include "../../net/net.h"
 #include "../../cmdline.h"
@@ -57,6 +58,9 @@ uint16_t powerup_kernel_i386(const multiboot_info_t* mbi)
 
 	pit_initialize(PIT_DEFAULT_HZ);
 
+	/* Before the network starts: DHCP transaction ids, NAT ports and TCP sequence numbers come from it */
+	random_initialize();
+
 	pci_initialize();
 	k_print("[K_INFO] network: %u e1000 port(s)\n", (uint32_t)e1000_initialize());
 	net_initialize();
@@ -100,6 +104,11 @@ size_t kern$self_test(void)
 
 	k_print("[K_INFO] .........  Test cpu_load_self_test()\n");
 	if ((status = cpu_load_self_test()) != UTIL$SUCCESS) {
+		return status;
+	}
+
+	k_print("[K_INFO] .........  Test random_self_test()\n");
+	if ((status = random_self_test()) != UTIL$SUCCESS) {
 		return status;
 	}
 

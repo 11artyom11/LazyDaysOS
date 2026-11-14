@@ -548,7 +548,17 @@ PY
     check_ping "unblocked device reaches the WAN again" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
     check_output "block and unblock were logged" "unblocked 10.0.9.3" curl -s --max-time 5 "$API/api/events?since=$last"
 
-    check_output "from the WAN: 403" "^403$" wan curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://$ROUTER_WAN/
+    echo "--- management is unreachable from the WAN"
+    check_output "WAN can't connect to the dashboard on the WAN address (SYN dropped)" "^silently dropped$" \
+        tcp_connect_result wan $ROUTER_WAN 80
+    # A WAN neighbour (anyone on the ISP's segment) can address the router's LAN address directly
+    wan ip route add $ROUTER_LAN/32 via $ROUTER_WAN
+    check_output "WAN can't reach the dashboard by addressing the LAN address" "^silently dropped$" \
+        tcp_connect_result wan $ROUTER_LAN 80
+    check_ping "WAN gets no answer from the LAN address at all" "100%" wan ping -c 2 -i 0.2 -W 1 $ROUTER_LAN
+    wan ip route del $ROUTER_LAN/32 via $ROUTER_WAN
+    check_output "TCP initial sequence numbers can't be predicted from earlier ones" "^unpredictable: 0 of 1[0-9] " \
+        attack isn $ROUTER_LAN 80 20
     check_output "unknown path: 404" "^404$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/nope
     check_output "wrong method: 405" "^405 405$" sh -c \
         "curl -s --max-time 5 -o /dev/null -w '%{http_code} ' -X DELETE $API/api/stats; curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/block"
@@ -580,6 +590,159 @@ threads = [threading.Thread(target=get) for _ in range(30)]
 for t in threads: t.start()
 for t in threads: t.join()
 print('30 x 200' if codes.count(200) == 30 else codes)"
+
+    echo "--- floods with spoofed sources"
+    # From the WAN: must not take a single connection slot
+    check_output "WAN SYN flood" "^sent " attack wan syn-flood $ROUTER_WAN 80 2 1000 203.0.113.
+    check_output "LAN still opens the dashboard right after the WAN flood" "^200$" \
+        curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
+    # From the LAN: half-open connections must not lock real clients out, and the
+    # router's ARP requests for ~250 nonexistent hosts must not push out real ones
+    attack syn-flood $ROUTER_LAN 80 6 1000 10.0.9. > $TMP/lan_flood &
+    flood=$!
+    sleep 1
+    check_output "LAN clients get the dashboard during a LAN SYN flood" "^200 200 200$" sh -c \
+        "for i in 1 2 3; do curl -s --max-time 4 -o /dev/null -w '%{http_code}' $API/api/stats; [ \$i = 3 ] || printf ' '; sleep 0.5; done; echo"
+    wait $flood
+    check_output "LAN SYN flood" "^sent " cat $TMP/lan_flood
+    # From the WAN segment, pings from nonexistent neighbours: the router's replies need
+    # ARP; the default gateway's entry must survive or the whole LAN loses the Internet
+    attack wan ping-flood $ROUTER_WAN 5 1000 10.0.8. > $TMP/wan_ping_flood &
+    flood=$!
+    sleep 1
+    check_ping "LAN keeps Internet access during a WAN ping flood from spoofed neighbours" "0%" \
+        ping -c 10 -i 0.2 -W 1 $WAN_HOST
+    wait $flood
+    check_output "WAN ping flood" "^sent " cat $TMP/wan_ping_flood
+    check_output "/api/stats counts filtered SYNs and SYN cookies" "^counted " python3 -c "
+import json, urllib.request
+s = json.load(urllib.request.urlopen('$API/api/stats', timeout=5))
+t = s['tcp']
+ok = t['filtered'] >= 1000 and t['syn_cookies_sent'] >= 1000 and t['syn_cookies_accepted'] >= 3 and s['ipv4']['wrong_port'] >= 2
+print(('counted ' if ok else 'wrong: ') + 'filtered %d, cookies sent %d, accepted %d, half-open evicted %d, refused %d, wrong_port %d'
+      % (t['filtered'], t['syn_cookies_sent'], t['syn_cookies_accepted'], t['syn_evicted'], t['refused'], s['ipv4']['wrong_port']))"
+}
+
+# Raw packets as an attacker would send them. A leading "wan" runs it on the WAN host.
+#   attack [wan] isn <dst> <port> <count>
+#       SYNs from successive source ports; reads the router's initial sequence
+#       numbers from its SYN-ACKs (the host's own stack then resets them) and
+#       checks whether each one follows from the previous one through xorshift32,
+#       the generator the kernel used before. Prints "unpredictable: 0 of <n> ..."
+#       or "PREDICTABLE: <hits> of <n> ...".
+#   attack [wan] syn-flood <dst> <port> <seconds> <packets/s> <source prefix, e.g. 203.0.113.>
+#       TCP SYNs from random spoofed sources prefix.3-254; prints "sent <n>"
+#   attack [wan] ping-flood <dst> <seconds> <packets/s> <source prefix>
+#       ICMP echo requests from random spoofed sources prefix.3-254; prints "sent <n>"
+attack() {
+    run=""
+    if [ "$1" = wan ]; then run=wan; shift; fi
+    $run python3 - "$@" <<'PY'
+import random, socket, struct, sys, time
+
+def csum(data):
+    if len(data) % 2:
+        data += b'\0'
+    s = sum(struct.unpack('!%dH' % (len(data) // 2), data))
+    while s >> 16:
+        s = (s & 0xFFFF) + (s >> 16)
+    return ~s & 0xFFFF
+
+def syn(src, dst, sport, dport):
+    tcp = struct.pack('!HHIIBBHHH', sport, dport, random.getrandbits(32), 0, 5 << 4, 0x02, 64240, 0, 0)
+    pseudo = socket.inet_aton(src) + socket.inet_aton(dst) + struct.pack('!BBH', 0, 6, len(tcp))
+    tcp = tcp[:16] + struct.pack('!H', csum(pseudo + tcp)) + tcp[18:]
+    ip = struct.pack('!BBHHHBBH4s4s', 0x45, 0, 20 + len(tcp), random.getrandbits(16), 0, 64, 6, 0,
+                     socket.inet_aton(src), socket.inet_aton(dst))
+    return ip[:10] + struct.pack('!H', csum(ip)) + ip[12:] + tcp
+
+def ping(src, dst):
+    icmp = struct.pack('!BBHHH', 8, 0, 0, random.getrandbits(16), 1) + b'spoofed'
+    icmp = icmp[:2] + struct.pack('!H', csum(icmp)) + icmp[4:]
+    ip = struct.pack('!BBHHHBBH4s4s', 0x45, 0, 20 + len(icmp), random.getrandbits(16), 0, 64, 1, 0,
+                     socket.inet_aton(src), socket.inet_aton(dst))
+    return ip[:10] + struct.pack('!H', csum(ip)) + ip[12:] + icmp
+
+def xorshift32(x):
+    x ^= (x << 13) & 0xFFFFFFFF
+    x ^= x >> 17
+    x ^= (x << 5) & 0xFFFFFFFF
+    return x
+
+mode, dst = sys.argv[1], sys.argv[2]
+out = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+if mode == 'isn':
+    port = int(sys.argv[3])
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.connect((dst, 9))
+    src = probe.getsockname()[0]
+    recv = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    recv.settimeout(2)
+    isns = []
+    for i in range(int(sys.argv[4])):
+        sport = 41000 + i
+        out.sendto(syn(src, dst, sport, port), (dst, 0))
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            try:
+                pkt = recv.recv(2000)
+            except socket.timeout:
+                break
+            ihl = (pkt[0] & 0x0F) * 4
+            s_port, d_port, seq, _, _, flags = struct.unpack('!HHIIBB', pkt[ihl:ihl + 14])
+            if pkt[12:16] == socket.inet_aton(dst) and s_port == port and d_port == sport and flags & 0x12 == 0x12:
+                isns.append(seq)
+                break
+    hits = 0
+    for a, b in zip(isns, isns[1:]):
+        x = a
+        for _ in range(16):
+            x = xorshift32(x)
+            if x == b:
+                hits += 1
+                break
+    verdict = 'PREDICTABLE' if hits else 'unpredictable'
+    print('%s: %d of %d next ISNs follow from the previous one (%d SYN-ACKs, first %s)'
+          % (verdict, hits, max(len(isns) - 1, 0), len(isns), ' '.join('%08x' % v for v in isns[:3])))
+else:
+    if mode == 'syn-flood':
+        port = int(sys.argv[3])
+        make = lambda src: syn(src, dst, random.randint(1024, 65535), port)
+        args = sys.argv[4:]
+    else:
+        make = lambda src: ping(src, dst)
+        args = sys.argv[3:]
+    seconds, rate, prefix = float(args[0]), int(args[1]), args[2]
+    sent, start = 0, time.time()
+    while time.time() - start < seconds:
+        for _ in range(max(rate // 100, 1)):
+            out.sendto(make(prefix + str(random.randint(3, 254))), (dst, 0))
+            sent += 1
+        time.sleep(0.01)
+    print('sent %d' % sent)
+PY
+}
+
+# [wan] host port: how a TCP connection attempt ends: "refused", "silently dropped", or
+# "connected" plus the status line of a GET /api/stats sent over it
+tcp_connect_result() {
+    run=""
+    if [ "$1" = wan ]; then run=wan; shift; fi
+    $run python3 -c "
+import socket
+try:
+    c = socket.create_connection(('$1', $2), timeout=2)
+except socket.timeout:
+    print('silently dropped')
+except ConnectionRefusedError:
+    print('refused')
+else:
+    c.settimeout(3)
+    c.sendall(b'GET /api/stats HTTP/1.1\\r\\nHost: $1\\r\\n\\r\\n')
+    try:
+        print('connected: ' + c.recv(100).decode(errors='replace').splitlines()[0])
+    except Exception as e:
+        print('connected: %r' % e)"
 }
 
 # ------------------------------------------------------------------- tcp ----

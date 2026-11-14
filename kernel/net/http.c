@@ -221,7 +221,8 @@ static void http$$dispatch(struct http$conn* h, char* body, size_t body_len)
         *query++ = '\0';
     }
 
-    /* The admin interface is for inside ports only */
+    /* The admin interface is for inside ports only. http$$admit already refuses
+       connections from outside ports; this is a second line of defence. */
     struct netdev* port = ipv4_iface_with_address(tcp_local_ip(h->tcp));
     if (port && nat_is_outside(port)) {
         http_stats.forbidden++;
@@ -362,7 +363,17 @@ static void http$$closed(struct tcp_conn* tcp, bool reset)
     }
 }
 
+/* The router is managed from inside ports only: SYNs from a NAT outside port are
+   dropped before the TCP handshake, so the WAN can neither reach the HTTP parser
+   nor tie up connection slots */
+static bool http$$admit(struct netdev* dev, uint32_t remote_ip)
+{
+    (void)remote_ip;
+    return !nat_is_outside(dev);
+}
+
 static const struct tcp_callbacks http$callbacks = {
+    .admit = http$$admit,
     .accepted = http$$accepted,
     .received = http$$received,
     .writable = http$$writable,

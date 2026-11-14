@@ -149,6 +149,7 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "ttl_exceeded", ipv4_stats.fwd_ttl_exceeded, false);
     api$$key_uint(&sb, "no_route", ipv4_stats.fwd_no_route, false);
     api$$key_uint(&sb, "bad_header", ipv4_stats.rx_bad_header, false);
+    api$$key_uint(&sb, "wrong_port", ipv4_stats.rx_wrong_port, false);
     sb_char(&sb, '}');
 
     sb_json_key(&sb, "nat", false);
@@ -179,6 +180,11 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "retransmits", tcp_stats.retransmits, false);
     api$$key_uint(&sb, "fast_retransmits", tcp_stats.fast_retransmits, false);
     api$$key_uint(&sb, "resets_sent", tcp_stats.resets_sent, false);
+    api$$key_uint(&sb, "refused", tcp_stats.refused, false);
+    api$$key_uint(&sb, "filtered", tcp_stats.filtered, false);
+    api$$key_uint(&sb, "syn_cookies_sent", tcp_stats.syn_cookies_sent, false);
+    api$$key_uint(&sb, "syn_cookies_accepted", tcp_stats.syn_cookies_accepted, false);
+    api$$key_uint(&sb, "syn_evicted", tcp_stats.syn_evicted, false);
     sb_char(&sb, '}');
 
     sb_json_key(&sb, "http", false);

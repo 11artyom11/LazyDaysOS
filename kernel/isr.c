@@ -3,6 +3,7 @@
 #include "idt.h"
 #include "isr.h"
 #include "panic.h"
+#include "random.h"
 #include "../libk/include/ttyin.h"
 #include <pit.h>
 #include <util.h>
@@ -61,6 +62,10 @@ void isr_register(uint8_t vector, isr_routine_ptr handler)
 void interrupt_handler(struct int_frame* frame)
 {
     uint32_t intno = frame->intno;
+
+    /* Interrupt timing feeds the entropy pool: the cycle counter's low bits at
+       each timer tick or NIC interrupt can't be observed from outside */
+    random_mix(random_arch_cycles() ^ (intno << 24));
 
     /* A CPU exception nobody handles is fatal: returning would re-run the faulting instruction */
     if (intno < CPU_EXCEPTION_COUNT && isr_count[intno] == 0) {

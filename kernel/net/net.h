@@ -62,9 +62,6 @@ static inline uint32_t net_prefix_to_mask(uint8_t prefix_len)
 
 void net_print_ip(uint32_t ip);
 
-/* Non-cryptographic pseudo random numbers (transaction ids) */
-uint32_t net_random32(void);
-
 /* Register the stack with netdev and apply ethN=/gw= options from the command line */
 void net_initialize(void);
 

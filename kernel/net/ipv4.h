@@ -86,6 +86,7 @@ struct ipv4_stats
     uint32_t fwd_ttl_exceeded;
     uint32_t fwd_no_route;
     uint32_t fwd_martian;               /* bad source/destination or directed broadcast */
+    uint32_t rx_wrong_port;             /* arrived on a NAT outside port for an inside port's address */
 };
 
 extern struct ipv4_stats ipv4_stats;

@@ -3,6 +3,7 @@
 #include "ipv4.h"
 #include "udp.h"
 #include <kio.h>
+#include "../random.h"
 #include <pit.h>
 #include <strbuf.h>
 #include "events.h"
@@ -128,7 +129,7 @@ static void dhcpc$$enter(struct dhcpc$client* c, enum dhcpc$state state, uint32_
     c->retry_ms = DHCPC_FIRST_RETRY_MS;
     c->next_send_ms = now;              /* act on the next tick */
     if (state == DHCPC$INIT || state == DHCPC$SELECTING) {
-        c->xid = net_random32();
+        c->xid = random32();
     }
 }
 

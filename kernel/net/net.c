@@ -11,6 +11,7 @@
 #include "http.h"
 #include "api.h"
 #include "../cpuload.h"
+#include "../random.h"
 #include "../cmdline.h"
 #include <kio.h>
 #include <pit.h>
@@ -141,27 +142,6 @@ bool net_parse_cidr(const char* text, uint32_t* ip, uint8_t* prefix_len)
     }
     *prefix_len = (uint8_t)prefix;
     return true;
-}
-
-uint32_t net_random32(void)
-{
-    static uint32_t state = 0;
-    if (state == 0) {
-        /* Seed from boot time and the first MAC so ports on different boxes differ */
-        state = pit_get_ticks() * 2654435761u + 0x9E3779B9u;
-        struct netdev* dev = netdev_get(0);
-        for (int i = 0; dev && i < ETH_ALEN; i++) {
-            state = (state ^ dev->mac[i]) * 16777619u;
-        }
-        if (state == 0) {
-            state = 1;
-        }
-    }
-    /* xorshift32: fine for transaction ids, NOT for anything security relevant */
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return state;
 }
 
 void net_print_ip(uint32_t ip)
@@ -308,6 +288,7 @@ void net_run_once(void)
         nat_tick(now);
         tcp_tick(now);
         cpu_load_tick(now);
+        random_tick(now);
         http_tick(now);
     }
     netdev_run_once();

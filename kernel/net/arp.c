@@ -60,20 +60,47 @@ static void arp$$release(struct arp$entry* entry)
     entry->state = ARP$FREE;
 }
 
-/* A free slot, or else the least recently confirmed resolved entry */
-static struct arp$entry* arp$$allocate(void)
+/*
+    A slot for a new entry; incomplete = for a resolution that is about to start.
+    Unresolved entries are capped at ARP_MAX_INCOMPLETE and then replace each other,
+    oldest first. Otherwise traffic towards many nonexistent neighbours (replies to
+    a flood of spoofed sources) fills the table with unresolved entries, pushes out
+    confirmed neighbours such as the default gateway, and leaves no room to resolve
+    them again. A confirmed neighbour takes a free slot, else the oldest unresolved
+    entry, else the least recently confirmed one.
+*/
+static struct arp$entry* arp$$allocate(bool incomplete)
 {
-    struct arp$entry* victim = NULL;
+    struct arp$entry* free_slot = NULL;
+    struct arp$entry* oldest_incomplete = NULL;
+    struct arp$entry* oldest_reachable = NULL;
+    int incomplete_count = 0;
     for (int i = 0; i < ARP_TABLE_SIZE; i++) {
         struct arp$entry* e = &arp$table[i];
         if (e->state == ARP$FREE) {
-            return e;
-        }
-        if (e->state == ARP$REACHABLE && (!victim || e->updated_ms < victim->updated_ms)) {
-            victim = e;
+            free_slot = free_slot ? free_slot : e;
+        } else if (e->state == ARP$INCOMPLETE) {
+            incomplete_count++;
+            if (!oldest_incomplete || (int32_t)(e->updated_ms - oldest_incomplete->updated_ms) < 0) {
+                oldest_incomplete = e;
+            }
+        } else if (!oldest_reachable || (int32_t)(e->updated_ms - oldest_reachable->updated_ms) < 0) {
+            oldest_reachable = e;
         }
     }
+
+    struct arp$entry* victim;
+    if (incomplete && incomplete_count >= ARP_MAX_INCOMPLETE) {
+        victim = oldest_incomplete;
+    } else if (free_slot) {
+        return free_slot;
+    } else {
+        victim = oldest_incomplete ? oldest_incomplete : oldest_reachable;
+    }
     if (victim) {
+        if (victim->state == ARP$INCOMPLETE) {
+            arp_stats.incomplete_evicted++;
+        }
         arp$$release(victim);
     }
     return victim;
@@ -156,7 +183,7 @@ void arp_receive(struct netdev* dev, const uint8_t* payload, size_t len)
 
     /* Addressed to us: whoever asks will most likely talk to us next, so remember them */
     if (!merged && sender) {
-        entry = arp$$allocate();
+        entry = arp$$allocate(false);
         if (entry) {
             entry->ip = sender;
             entry->dev = dev;
@@ -204,7 +231,7 @@ bool arp_output(struct netdev* dev, uint32_t next_hop, const void* packet, size_
         return true;
     }
 
-    entry = arp$$allocate();
+    entry = arp$$allocate(true);
     if (!entry) {
         arp_stats.table_full++;
         kfree(copy);

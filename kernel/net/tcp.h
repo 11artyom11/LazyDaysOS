@@ -28,6 +28,20 @@
       ignored, which makes the peer fall back to plain RFC 793 behaviour
     - TIME_WAIT is shortened to TCP_TIMEWAIT_MS, and the oldest TIME_WAIT slot is
       reused when the table is full
+
+    Hardening against off-path and flooding attackers:
+    - every initial sequence number is a SYN cookie: keyed ChaCha20 hashes of the
+      addresses, ports and the peer's ISN plus a 64 s counter (RFC 6528's clock
+      plus secret hash, in the form Linux uses for cookies). Seeing one's own ISNs
+      says nothing about another connection's.
+    - with the connection table full, SYNs are answered statelessly; the ACK that
+      completes the handshake proves itself with the cookie and recreates the
+      connection, evicting the oldest half-open one if needed (it can be
+      recreated the same way). A flood of spoofed SYNs can't lock clients out.
+    - a half-open connection holds only its slot; the TCP_SNDBUF send buffer is
+      allocated when the handshake completes
+    - a listener's admit() callback runs before anything is allocated or sent;
+      a refused SYN is dropped silently (no SYN-ACK, no RST)
 */
 
 #define TCP_MAX_CONNS       16
@@ -47,6 +61,9 @@ struct tcp_conn;
 
 struct tcp_callbacks
 {
+    /* Called for each new SYN before any state exists; false drops it silently.
+       NULL accepts everything. dev is the port the SYN arrived on. */
+    bool (*admit)(struct netdev* dev, uint32_t remote_ip);
     void (*accepted)(struct tcp_conn* conn);                        /* handshake completed */
     void (*received)(struct tcp_conn* conn, const uint8_t* data, size_t len); /* len 0: peer finished sending */
     void (*writable)(struct tcp_conn* conn);                        /* send buffer space was freed */
@@ -96,7 +113,11 @@ struct tcp_stats
     uint32_t fast_retransmits;          /* on three duplicate ACKs */
     uint32_t resets_sent;
     uint32_t aborted;                   /* gave up after TCP_MAX_RETRIES, or reset by peer */
-    uint32_t refused;                   /* SYN dropped: connection table full */
+    uint32_t refused;                   /* connection dropped: table full or no memory for its buffer */
+    uint32_t filtered;                  /* SYN dropped by the listener's admit() */
+    uint32_t syn_cookies_sent;          /* SYN-ACKs sent without keeping state (table full) */
+    uint32_t syn_cookies_accepted;      /* connections recreated from a cookie */
+    uint32_t syn_evicted;               /* half-open connections replaced by a cookie-validated one */
 };
 
 extern struct tcp_stats tcp_stats;

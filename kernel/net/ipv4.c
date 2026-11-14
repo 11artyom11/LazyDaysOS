@@ -288,6 +288,15 @@ void ipv4_receive(struct netdev* dev, const uint8_t* packet, size_t len)
         return;
     }
 
+    /* Strong host model on outside ports (RFC 1122 3.3.4.2): from the WAN the router
+       is only its WAN address. Without this, a WAN neighbour could address the LAN
+       address directly and reach services meant for the inside (the dashboard). */
+    if (nat_is_outside(dev) && dst != NET_IP_BROADCAST && dst != ipv4_iface_address(dev) &&
+        dst != (ipv4_iface_address(dev) | ~ipv4_iface_netmask(dev))) {
+        ipv4_stats.rx_wrong_port++;
+        return;
+    }
+
     const uint8_t* payload = packet + header_len;
     size_t payload_len = total_len - header_len;
     switch (ip->protocol) {

@@ -3,6 +3,7 @@
 #include "ipv4.h"
 #include "icmp.h"
 #include <kio.h>
+#include "../random.h"
 #include <pit.h>
 
 #define NAT$NONE            (-1)
@@ -186,7 +187,7 @@ static uint16_t nat$$choose_port(uint8_t protocol, const struct netdev* outside,
     if (int_port != 0 && !nat$$ext_port_taken(protocol, ext_ip, int_port, int_ip, int_port)) {
         return int_port;
     }
-    uint32_t start = net_random32() % NAT$PORT_COUNT;
+    uint32_t start = random32() % NAT$PORT_COUNT;
     for (uint32_t n = 0; n < NAT$PORT_COUNT; n++) {
         uint16_t port = NAT$PORT_FIRST + (start + n) % NAT$PORT_COUNT;
         if (!nat$$ext_port_taken(protocol, ext_ip, port, int_ip, int_port)) {
