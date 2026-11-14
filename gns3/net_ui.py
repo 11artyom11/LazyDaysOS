@@ -34,6 +34,8 @@ GNS3 = "http://127.0.0.1:3080/v2"
 PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro")
 PORT = int(os.environ.get("NET_UI_PORT", "8095"))
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "net_ui.html")
+# Every finished experiment, one JSON object per line: survives restarts, and is the raw data for the thesis
+RESULTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "metro_experiments.jsonl")
 PROBE_INTERVAL = 0.1
 POLL_INTERVALS = (0.25, 0.5, 1.0, 2.0)  # router stats, in-band: ~16 KB per router per poll
 PUBLISH_INTERVAL = 0.1
@@ -127,6 +129,17 @@ class Lab:
             silent = (l.get("filters") or {}).get("packet_loss") == [100]
             self.link_state.setdefault(l["link_id"], "cut" if l.get("suspend") else "silent" if silent else "up")
         self.links = links
+        # Scenario state from reality, not memory: survives a restart of this dashboard
+        x7 = self.nodes.get(metro.MISCONFIGURABLE)
+        if x7:
+            cmdline = (x7.get("properties") or {}).get("kernel_command_line", "")
+            self.misconfigured = " rip " in f" {cmdline} "
+        try:
+            out = subprocess.run(["docker", "exec", self.container(metro.HIJACKER), "pgrep", "-f", HIJACK_MARKER],
+                                 capture_output=True, text=True, timeout=5)
+            self.hijacking = bool(out.stdout.strip())
+        except (subprocess.SubprocessError, OSError):
+            pass
         return self
 
     def container(self, host):
@@ -417,6 +430,39 @@ EXPECT = {
     "fix": f"X7 reboots without RIP on its customer port. Forged routes elsewhere age out after {T} s.",
     "reset": f"Everything goes back to normal; routing settles within ~10-{T} s.",
 }
+def single_homed(router):
+    """Hosts that reach the network only through this router"""
+    return [(h, m["role"]) for h, m in lab.hosts.items() if m["router"] == router]
+
+
+def impact_of(kind, target):
+    """What a specific router or link carries, so the expectation names what will break"""
+    if kind == "stop" and target in lab.routers:
+        notes = []
+        for host, role in single_homed(target):
+            if host == "S1":
+                notes.append(f"S1, the server every customer uses, hangs only off {target}: every customer loses "
+                             f"the service until {target} is started again (a single point of failure)")
+            elif role == "noc":
+                notes.append(f"the NOC hangs off {target}: the dashboard loses all router data (monitoring is "
+                             f"in-band) until {target} is back")
+            elif role == "server":
+                notes.append(f"{host} hangs off {target} and goes offline (not probed here)")
+            elif role == "customer":
+                notes.append(f"its customer {host} is single-homed and stays offline")
+        return notes
+    if kind in ("cut", "silent") and target in lab.links:
+        l = lab.links[target]
+        for end in (l["a"], l["b"]):
+            if end == "S1":
+                return ["this is S1's only link: every customer loses the service"]
+            if end == "NOC":
+                return ["this is the NOC's only link: the dashboard loses all router data"]
+            if end in lab.hosts and lab.hosts[end]["role"] == "customer":
+                return [f"this is {end}'s only link: {end} stays offline"]
+    return []
+
+
 SETTLE_ROUTING_S = U + 1                # no route change for a whole update cycle (triggered updates come 1-5 s apart)
 SETTLE_SERVICE_S = 5                    # no customer changing state for this long
 # The earliest an action's consequences can be complete: effects that wait for a RIP
@@ -441,7 +487,14 @@ class Publisher(threading.Thread):
         self.calm_since = None
         self.experiment = None          # the one consequences are attributed to
         self.results = collections.deque(maxlen=20)
-        self.next_id = 1
+        try:
+            with open(RESULTS_FILE) as f:
+                for line in f.readlines()[-20:]:
+                    self.results.appendleft(json.loads(line))
+            self.next_id = max((r["id"] for r in self.results), default=0) + 1
+        except (OSError, ValueError):
+            pass
+        self.next_id = getattr(self, "next_id", 1)
         self.queue = []                 # (description, callable) waiting for the network to settle
         self.flow_key = None
         self.flow_changed_at = time.time()
@@ -451,7 +504,7 @@ class Publisher(threading.Thread):
         self.waiting = []
         self.dispatching = False        # a queued action is being applied: don't take the next one yet
 
-    def start_action(self, kind, text):
+    def start_action(self, kind, text, target=None):
         now = time.time()
         overlaps = self.experiment["id"] if self.experiment and self.experiment["settled"] is None else None
         if overlaps:
@@ -459,7 +512,9 @@ class Publisher(threading.Thread):
         net = (self.last_tick or {}).get("network", {})
         flows = {f["host"]: f for f in (self.last_tick or {}).get("flows", [])}
         self.experiment = {
-            "id": self.next_id, "kind": kind, "text": text, "expected": EXPECT.get(kind, ""), "t0": now,
+            "id": self.next_id, "kind": kind, "text": text,
+            "expected": " ".join([EXPECT.get(kind, "")] + [n[0].upper() + n[1:] + "." for n in impact_of(kind, target)]),
+            "t0": now,
             "overlaps": overlaps, "first_effect": None, "first_effect_text": None,
             "peak_down": 0, "peak_hijacked": 0, "peak_loops": 0.0, "outage_s": 0.0,
             "settled": None, "min_s": MIN_WINDOW.get(kind, (3, ""))[0], "min_why": MIN_WINDOW.get(kind, (3, ""))[1],
@@ -474,14 +529,22 @@ class Publisher(threading.Thread):
         e = self.experiment
         e["settled"] = round(now - e["t0"], 1)
         e["interrupted"] = interrupted
-        self.results.appendleft({k: v for k, v in e.items() if k not in ("base_hops", "last_t", "min_why")})
+        record = {k: v for k, v in e.items() if k not in ("base_hops", "last_t", "min_why")}
+        record["outage_s"] = round(record["outage_s"], 1)
+        self.results.appendleft(record)
+        try:
+            os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
+            with open(RESULTS_FILE, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except OSError as err:
+            print("results file:", err, flush=True)
         if not interrupted:
             effect = f"first effect after {e['first_effect']} s ({e['first_effect_text']})" if e["first_effect"] is not None else "no visible effect"
             log(f"#{e['id']} settled after {e['settled']} s: {effect}; up to {e['peak_down']} customers without "
                 f"service, {e['outage_s']:.1f} customer-seconds of outage", "summary")
 
-    def enqueue(self, description, fn):
-        self.queue.append((description, fn))
+    def enqueue(self, description, fn, target=None):
+        self.queue.append((description, fn, target))
         log(f"queued until the network settles: {description}", "queued")
         return len(self.queue)
 
@@ -531,11 +594,36 @@ class Publisher(threading.Thread):
         self.settled = (e is None or e["settled"] is not None) and not waiting and not self.dispatching
         if self.settled and self.queue:
             # One at a time, in order: the next waits until this one's experiment has settled
-            description, fn = self.queue.pop(0)
+            description, fn, target = self.queue.pop(0)
             self.dispatching = True
-            threading.Thread(target=run_queued, args=(description, fn), daemon=True).start()
+            threading.Thread(target=run_queued, args=(description, fn, target), daemon=True).start()
             self.settled = False
         return routing_calm, service_stable
+
+    def health(self, net, flows):
+        """Settled only means stable. Are customers served, and if not, why?"""
+        down = [f["host"] for f in flows if f["state"] not in ("ok", "degraded")]
+        causes = []
+        status = {n: m["status"] for n, m in lab.nodes.items()}
+        for host, role in (("S1", "server"), ("NOC", "noc")):
+            router = lab.hosts[host]["router"]
+            link_down = any(lab.link_state.get(i) != "up" for i, l in lab.links.items() if host in (l["a"], l["b"]))
+            if status.get(router) != "started" or link_down:
+                why = f"{router} is stopped" if status.get(router) != "started" else f"its only link is {'cut' if link_down else 'down'}"
+                causes.append(f"server S1 unreachable: {why} (single point of failure)" if host == "S1"
+                              else f"NOC unreachable: {why}, so the dashboard has no router data")
+        for host in down:
+            router = lab.hosts[host]["router"]
+            if status.get(router) != "started":
+                causes.append(f"{host}: its access router {router} is stopped")
+        if net["hijacked"]:
+            causes.append(f"{len(net['hijacked'])} routers send the server's traffic to {metro.HIJACKER}"
+                          + ("" if lab.hijacking else " (forged routes left over; they expire at the RIP timeout)"))
+        if net["loops"] > 0:
+            causes.append(f"{net['loops']} packets/s dying in routing loops")
+        if down and not causes:
+            causes.append(f"{len(down)} customers without service: {', '.join(down[:6])}")
+        return {"healthy": not down and not net["hijacked"], "down": down, "causes": causes}
 
     def disturbances(self, net):
         """What is currently not as built, with the action that undoes it"""
@@ -628,7 +716,8 @@ class Publisher(threading.Thread):
         status = {"settled": self.settled, "routing_calm": routing_calm, "service_stable": service_stable,
                   "waiting": self.waiting,
                   "service_stable_for": round(now - self.flow_changed_at, 1),
-                  "disturbances": self.disturbances(net), "queue": [d for d, _ in self.queue],
+                  "disturbances": self.disturbances(net), "queue": [q[0] for q in self.queue],
+                  "health": self.health(net, flows),
                   "experiment": e and {k: v for k, v in e.items() if k not in ("base_hops", "last_t")} | {"elapsed": round(now - e["t0"], 1)},
                   "results": list(self.results), "settle_rule": [SETTLE_ROUTING_S, SETTLE_SERVICE_S]}
         tick = {"type": "tick", "routers": per_router, "links": links, "flows": flows, "network": net,
@@ -749,10 +838,14 @@ def describe(path, body):
     return f"{body.get('action')} {body.get('name', '')}".strip()
 
 
-def run_queued(description, fn):
+def target_of(body):
+    return body.get("name") or body.get("id")
+
+
+def run_queued(description, fn, target=None):
     try:
         kind, text = fn()
-        publisher.start_action(kind, text)
+        publisher.start_action(kind, text, target)
     except Exception as e:
         log(f"queued action failed: {description}: {e}", "error")
     finally:
@@ -814,10 +907,10 @@ class Handler(BaseHTTPRequestHandler):
             if url.path in ("/api/link", "/api/node", "/api/scenario"):
                 # when=settled: run once the network has settled, so consequences don't mix
                 if body.get("when") == "settled" and not publisher.settled:
-                    position = publisher.enqueue(describe(url.path, body), lambda: dispatch(url.path, body))
+                    position = publisher.enqueue(describe(url.path, body), lambda: dispatch(url.path, body), target_of(body))
                     return self.reply(200, {"ok": True, "queued": position})
                 kind, text = dispatch(url.path, body)
-                return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text)})
+                return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text, target_of(body))})
             elif url.path == "/api/queue/clear":
                 publisher.queue.clear()
                 log("queue cleared", "queued")
