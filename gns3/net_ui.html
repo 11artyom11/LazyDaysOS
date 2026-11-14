@@ -61,6 +61,38 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: v
 .card .name { font-weight: 600; font-size: 13.5px; }
 .card .why { font-size: 12.5px; color: var(--muted); margin: 2px 0 7px; }
 .card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.now { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 11px; font-weight: 650; font-size: 14px; }
+.now.settled { background: var(--ok-soft); color: var(--ok); }
+.now.settling { background: var(--warn-soft); color: var(--warn); }
+.now .icon { font-size: 18px; }
+.now small { display: block; font-weight: 500; font-size: 12.5px; color: var(--text); opacity: .85; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 9px; border-radius: 999px; font-size: 12.5px; background: var(--bad-soft); color: var(--bad); }
+.chip button { padding: 1px 8px; font-size: 12px; border-radius: 999px; }
+.chip.info { background: var(--loop-soft); color: var(--loop); padding-right: 9px; }
+.exp { margin-top: 10px; border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; background: var(--panel-2); }
+.exp .title { font-weight: 650; }
+.exp .id { font-family: var(--mono); color: var(--muted); margin-right: 4px; }
+.steps { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; display: grid; gap: 3px; }
+.steps li { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: baseline; }
+.steps li .t { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.steps li.done .mark { color: var(--ok); } .steps li.wait .mark { color: var(--warn); } .steps li.todo { color: var(--muted); }
+.counters { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; margin: 6px 0 0 24px; color: var(--muted); }
+.counters b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+.expected { margin-top: 7px; font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 8px; }
+.queue { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+table.results { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.results th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+table.results td { padding: 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.results td.n { font-family: var(--mono); text-align: right; white-space: nowrap; }
+table.results tr.interrupted td { color: var(--muted); font-style: italic; }
+.modal { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: grid; place-items: center; z-index: 20; }
+.modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; max-width: 460px; box-shadow: var(--shadow); }
+.modal .box h3 { margin: 0 0 6px; font-size: 16px; }
+.modal .box p { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+.modal .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.log li .exp-tag { font-family: var(--mono); color: var(--muted); margin-right: 4px; }
+.log li.effect { color: var(--warn); } .log li.queued { color: var(--muted); font-style: italic; }
 .action { display: grid; gap: 4px; font-size: 13px; }
 .action .what { font-weight: 600; }
 .measure { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 13px; }
@@ -124,8 +156,15 @@ svg text { font-family: system-ui, sans-serif; }
   </div>
   <div class="side">
     <section>
-      <h2>Last action</h2>
-      <div class="action" id="action"><span class="muted">Nothing yet. Break something.</span></div>
+      <h2>Status</h2>
+      <div class="now settled" id="now"><span class="icon">✓</span><span>…</span></div>
+      <div class="chips" id="disturb"></div>
+      <div id="exp"></div>
+      <div class="queue" id="queue"></div>
+    </section>
+    <section>
+      <h2>Results <span class="muted" style="text-transform:none;letter-spacing:0">one row per experiment</span></h2>
+      <table class="results" id="results"><thead><tr><th>#</th><th>action</th><th title="time until something changed">effect</th><th title="most customers without service at once">down</th><th title="sum over customers of seconds without service">outage</th><th title="time until routing calm and service stable">settled</th></tr></thead><tbody></tbody></table>
     </section>
     <section>
       <h2>Customers → server S1 <span class="muted" id="served"></span></h2>
@@ -274,7 +313,7 @@ function openLink(def, evt) {
   const pop = popAt(evt, `<div class="head">${esc(def.a)} eth${def.a_port} — ${esc(def.b)} eth${def.b_port}</div>
     <div class="kv"><span>network</span><b>${esc(def.network || "host link")}</b><span>state</span><b>${esc(l.state)}</b><span>load</span><b>${fmtBps(l.bps)}</b></div>
     <div class="row"><button data-a="cut">Cut cable</button><button data-a="silent">Silent failure</button><button data-a="restore">Restore</button></div>`);
-  pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); post("/api/link", { id: def.id, action: b.dataset.a }); });
+  pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); act("/api/link", { id: def.id, action: b.dataset.a }); });
 }
 
 function openNode(def, evt) {
@@ -287,7 +326,7 @@ function openNode(def, evt) {
       <span>TTL expired/s</span><b>${r.ttl_exceeded ?? "–"}</b><span>CPU</span><b>${r.cpu != null ? (r.cpu / 10).toFixed(1) + "%" : "–"}</b>
       <span>hijacked</span><b>${r.hijacked ? "yes: routes the server to H7" : "no"}</b></div>
       <div class="row"><button data-a="stop" class="danger">Crash</button><button data-a="start">Start</button></div>`);
-    pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); post("/api/node", { name: def.name, action: b.dataset.a }); });
+    pop.querySelectorAll("button").forEach((b) => b.onclick = () => { closePop(); act("/api/node", { name: def.name, action: b.dataset.a }); });
   } else {
     const f = ((t && t.flows) || []).find((x) => x.host === def.name);
     popAt(evt, `<div class="head">${esc(def.name)} <span class="muted">(${esc(def.role)})</span></div>
@@ -310,14 +349,7 @@ function renderTick(t) {
        n.hijacked.length ? `${n.hijacked.length}/${n.routers} routers hijacked` : t.scenario.misconfigured ? "X7 misconfigured" : "no hijack");
   $("served").textContent = `${n.served}/${n.customers} served`;
 
-  const a = t.action;
-  if (a) {
-    const since = (x) => x ? (x - a.t0).toFixed(1) + " s" : "…";
-    $("action").innerHTML = `<span class="what">${esc(a.text)}</span>
-      <div class="measure"><span>elapsed</span><span>${a.elapsed.toFixed(1)} s</span>
-      <span>all customers served again after</span><span>${since(a.service_at)}</span>
-      <span>routing converged after</span><span>${since(a.converged_at)}</span></div>`;
-  }
+  renderStatus(t);
   const box = $("customers");
   if (box.children.length !== t.flows.length) {
     box.replaceChildren(...t.flows.map((f) => {
@@ -349,6 +381,80 @@ function renderTick(t) {
   if (S.pop === null) { /* keep popovers static while open */ }
 }
 
+/* ---------- status: experiments, settling, what is in effect ---------- */
+function renderStatus(t) {
+  const st = t.status, n = t.network, e = st.experiment;
+  S.status = st;
+  const now = $("now");
+  if (st.settled) {
+    now.className = "now settled";
+    now.innerHTML = `<span class="icon">✓</span><span>Settled: ready for the next experiment<small>routing calm, every customer's service unchanged for ${st.service_stable_for.toFixed(0)} s</small></span>`;
+  } else {
+    const waiting = st.waiting || [];
+    now.className = "now settling";
+    now.innerHTML = `<span class="icon">⏳</span><span>Settling${e && e.settled == null ? ` from #${e.id}` : ""}: results still coming in<small>${esc(waiting.join(" · ") || "…")}</small></span>`;
+  }
+  $("disturb").replaceChildren(...st.disturbances.map((d) => {
+    const c = document.createElement("span");
+    c.className = "chip" + (d.undo ? "" : " info");
+    c.textContent = d.text;
+    if (d.undo) {
+      const b = document.createElement("button");
+      b.textContent = "undo";
+      b.onclick = () => act(d.undo[0], d.undo[1]);
+      c.appendChild(b);
+    }
+    return c;
+  }));
+  if (e) {
+    const done = (x) => x != null;
+    const step = (cls, mark, text, time) => `<li class="${cls}"><span class="mark">${mark}</span><span>${text}</span><span class="t">${time || ""}</span></li>`;
+    const live = e.settled == null;
+    $("exp").innerHTML = `<div class="exp"><div class="title"><span class="id">#${e.id}</span>${esc(e.text)}</div>
+      <ul class="steps">
+        ${step("done", "✓", "applied", "0.0 s")}
+        ${done(e.first_effect) ? step("done", "✓", "first effect: " + esc(e.first_effect_text), e.first_effect + " s")
+          : live ? step("wait", "…", "waiting for a visible effect", e.elapsed.toFixed(1) + " s") : step("todo", "–", "no visible effect", "")}
+        ${live ? step("wait", "…", "settling: " + esc((st.waiting || []).join("; ") || "…"), e.elapsed.toFixed(1) + " s")
+               : step("done", "✓", e.interrupted ? "interrupted by the next action" : "settled", e.settled + " s")}
+      </ul>
+      <div class="counters"><span>customers down now <b>${n.customers - n.served}</b> (max <b>${e.peak_down}</b>)</span>
+        <span>outage <b>${e.outage_s.toFixed(1)}</b> customer·s</span>
+        <span>routers hijacked <b>${n.hijacked.length}</b></span><span>looping pkts/s <b>${n.loops}</b></span></div>
+      ${e.overlaps ? `<div class="expected">Started while #${e.overlaps} was still settling: its consequences may be mixed in.</div>` : ""}
+      <div class="expected"><b>Expected:</b> ${esc(e.expected)}</div></div>`;
+  } else {
+    $("exp").innerHTML = `<div class="exp muted">No experiment yet. Pick a scenario or click a link or router.</div>`;
+  }
+  $("queue").innerHTML = st.queue.length ? `Queued, runs when settled: ${st.queue.map(esc).join(" → ")} <button id="qclear">clear</button>` : "";
+  if (st.queue.length) $("qclear").onclick = () => post("/api/queue/clear", {});
+  const rows = st.results.map((r) => `<tr class="${r.interrupted ? "interrupted" : ""}"><td class="n">#${r.id}</td><td>${esc(r.text)}${r.interrupted ? " (interrupted)" : ""}</td>
+    <td class="n">${r.first_effect != null ? r.first_effect + " s" : "–"}</td><td class="n">${r.peak_down}${r.peak_hijacked ? ` · ${r.peak_hijacked}R` : ""}</td>
+    <td class="n">${r.outage_s.toFixed(1)} s</td><td class="n">${r.settled} s</td></tr>`).join("");
+  const body = $("results").tBodies[0];
+  if (body.dataset.html !== rows) { body.innerHTML = rows || `<tr><td colspan="6" class="muted">Finished experiments appear here.</td></tr>`; body.dataset.html = rows; }
+}
+
+/* An action while the network is still settling would mix consequences: ask first */
+function act(path, body) {
+  if (!S.status || S.status.settled) return post(path, body);
+  const e = S.status.experiment;
+  const m = document.createElement("div");
+  m.className = "modal";
+  m.innerHTML = `<div class="box"><h3>The network is still settling</h3>
+    <p>${e ? `#${e.id} (${esc(e.text)}) is still having effects.` : "Routing or service is still changing."}
+    Starting now would mix its consequences with this action's.</p>
+    <div class="row"><button class="primary" data-w="settled">Queue: run when settled</button><button data-w="now">Run now anyway</button><button data-w="cancel">Cancel</button></div></div>`;
+  m.onclick = (ev) => {
+    const w = ev.target.dataset && ev.target.dataset.w;
+    if (!w && ev.target !== m) return;
+    m.remove();
+    if (w === "settled") post(path, { ...body, when: "settled" });
+    else if (w === "now") post(path, body);
+  };
+  document.body.appendChild(m);
+}
+
 function push(a, ts, v) { a.push([ts, v]); while (a.length && a[0][0] < ts - WINDOW) a.shift(); }
 function chart(id, data, color, max) {
   const c = $(id), dpr = window.devicePixelRatio || 1;
@@ -375,6 +481,7 @@ function addLog(ev) {
   li.innerHTML = `<span class="t"></span><span></span>`;
   li.firstChild.textContent = new Date(ev.ts * 1000).toLocaleTimeString([], { hour12: false });
   li.lastChild.textContent = ev.text;
+  if (ev.exp) { const tag = document.createElement("span"); tag.className = "exp-tag"; tag.textContent = "#" + ev.exp; li.lastChild.prepend(tag); }
   $("log").prepend(li);
   while ($("log").children.length > 200) $("log").lastChild.remove();
 }
@@ -386,12 +493,12 @@ function linkBetween(a, b) {
 document.querySelectorAll("[data-cut],[data-silent]").forEach((b) => b.onclick = () => {
   const [x, y] = (b.dataset.cut || b.dataset.silent).split("|");
   const l = linkBetween(x, y);
-  if (l) post("/api/link", { id: l.def.id, action: b.dataset.cut ? "cut" : "silent" });
+  if (l) act("/api/link", { id: l.def.id, action: b.dataset.cut ? "cut" : "silent" });
 });
 document.querySelectorAll("[data-stop],[data-start]").forEach((b) => b.onclick = () =>
-  post("/api/node", { name: b.dataset.stop || b.dataset.start, action: b.dataset.stop ? "stop" : "start" }));
-document.querySelectorAll("[data-scenario]").forEach((b) => b.onclick = () => post("/api/scenario", { action: b.dataset.scenario }));
-$("reset").onclick = () => post("/api/scenario", { action: "reset" });
+  act("/api/node", { name: b.dataset.stop || b.dataset.start, action: b.dataset.stop ? "stop" : "start" }));
+document.querySelectorAll("[data-scenario]").forEach((b) => b.onclick = () => act("/api/scenario", { action: b.dataset.scenario }));
+$("reset").onclick = () => post("/api/scenario", { action: "reset" });   // reset never waits
 $("rate").onchange = () => post("/api/rate", { poll: Number($("rate").value) });
 $("theme").onclick = () => {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

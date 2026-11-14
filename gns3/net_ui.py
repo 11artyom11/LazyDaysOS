@@ -89,8 +89,11 @@ class Hub:
 hub = Hub()
 
 
+CURRENT_EXPERIMENT = [None]             # id of the experiment consequences are attributed to
+
+
 def log(text, kind="info", **extra):
-    hub.publish({"type": "log", "text": text, "kind": kind, **extra})
+    hub.publish({"type": "log", "text": text, "kind": kind, "exp": CURRENT_EXPERIMENT[0], **extra})
     print(time.strftime("%H:%M:%S"), text, flush=True)
 
 
@@ -182,8 +185,9 @@ def monitor(node, command):
 
 NOC_AGENT = r'''
 import json, sys, threading, time, urllib.request, base64
-routers = json.loads(sys.argv[1]); auth = "Basic " + base64.b64encode(sys.argv[2].encode()).decode()
-interval = float(sys.argv[3])
+# argv: marker (first, so busybox pkill -f sees it), routers, credentials, interval
+routers = json.loads(sys.argv[2]); auth = "Basic " + base64.b64encode(sys.argv[3].encode()).decode()
+interval = float(sys.argv[4])
 out = threading.Lock()
 def fetch(ips):
     for ip in ips:
@@ -269,8 +273,8 @@ class Routers(threading.Thread):
         while True:
             try:
                 proc = self.proc = subprocess.Popen(
-                    ["docker", "exec", lab.container("NOC"), "python3", "-u", "-c", NOC_AGENT,
-                     json.dumps(targets), f"admin:{metro.PASSWORD}", str(self.interval), NOC_MARKER],
+                    ["docker", "exec", lab.container("NOC"), "python3", "-u", "-c", NOC_AGENT, NOC_MARKER,
+                     json.dumps(targets), f"admin:{metro.PASSWORD}", str(self.interval)],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 for line in proc.stdout:
                     try:
@@ -375,7 +379,8 @@ class Probe(threading.Thread):
 def stop_agents():
     """Killing a docker exec client leaves its process running in the container: kill
     our poller and probes inside the containers themselves (on start, on rate change)"""
-    procs = [subprocess.Popen(["docker", "exec", lab.container("NOC"), "pkill", "-f", NOC_MARKER],
+    # busybox pkill -f only sees the start of a long command line: match its beginning
+    procs = [subprocess.Popen(["docker", "exec", lab.container("NOC"), "pkill", "-f", "python3 -u -c"],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
     for host, meta in lab.hosts.items():
         if meta["role"] == "customer":
@@ -391,16 +396,166 @@ probes = {h: Probe(h) for h, meta in metro.topology()[2].items() if meta["role"]
 
 # ---- derived network state, published twice a second ---------------------------------
 
+U, T, G = (int(x) for x in metro.TIMERS.split(","))
+EXPECT = {
+    "cut": "Both routers see the link go down and withdraw its routes at once: customers routed over it "
+           "should be back on another path within ~1-5 s.",
+    "silent": f"Nothing notices until the RIP timeout ({T} s): customers routed over this link stay offline "
+              f"for about {T} s, then reroute.",
+    "restore": "Paths move back over the link within a few seconds, normally without loss.",
+    "stop": "Its neighbours see their links go down and reroute within seconds. A crashed access router's own "
+            "customer stays offline until it is started again.",
+    "start": "The router boots (~2 s) and relearns its routes; some paths move back to it.",
+    "withdraw": "C1 announces the server network as unreachable. Other routers may count to infinity: packets "
+                "loop (TTL expired) until the routes reach metric 16, then every customer loses the server.",
+    "misconfigure": "X7 reboots (~2 s). Nothing else changes: the risk stays latent until someone on its "
+                    "customer port speaks RIP.",
+    "hijack": "If X7 is misconfigured, the forged /25 routes spread hop by hop (1-5 s per hop): every router "
+              "within ~10-20 s, and every customer loses the server. If X7 is fixed, nothing happens.",
+    "stop_hijack": f"The forged routes stay until the RIP timeout ({T} s) expires them; count to infinity may "
+                   f"loop packets for a few seconds after that.",
+    "fix": f"X7 reboots without RIP on its customer port. Forged routes elsewhere age out after {T} s.",
+    "reset": f"Everything goes back to normal; routing settles within ~10-{T} s.",
+}
+SETTLE_ROUTING_S = U + 1                # no route change for a whole update cycle (triggered updates come 1-5 s apart)
+SETTLE_SERVICE_S = 5                    # no customer changing state for this long
+# The earliest an action's consequences can be complete: effects that wait for a RIP
+# timer show up only after it, however quiet the network looks before
+MIN_WINDOW = {"silent": (T + 2 * U, f"a silent failure is noticed only at the RIP timeout ({T} s)"),
+              "stop_hijack": (T + U, f"forged routes expire only at the RIP timeout ({T} s)"),
+              "fix": (T + U, f"forged routes elsewhere expire only at the RIP timeout ({T} s)"),
+              "withdraw": (2 * U + 5, "routers may count to infinity before the route is gone"),
+              "restore": (U + 3, "routes over the link come back with the next updates"),
+              "start": (U + 5, "the router boots and relearns its routes"),
+              "hijack": (2 * U + 5, "forged routes spread hop by hop (1-5 s per hop)"),
+              "reset": (U + 5, "routes come back with the next updates")}
+
+
 class Publisher(threading.Thread):
+    """Publishes the network state and runs every action as an experiment: applied ->
+    first effect -> settled, with its consequences attributed to it"""
+
     def __init__(self):
         super().__init__(daemon=True)
-        self.action = None              # {"text", "t0", "service_at", "converged_at"}
         self.converged = None
         self.calm_since = None
+        self.experiment = None          # the one consequences are attributed to
+        self.results = collections.deque(maxlen=20)
+        self.next_id = 1
+        self.queue = []                 # (description, callable) waiting for the network to settle
+        self.flow_key = None
+        self.flow_changed_at = time.time()
+        self.last_discover = 0
+        self.last_tick = None
+        self.settled = True
+        self.waiting = []
+        self.dispatching = False        # a queued action is being applied: don't take the next one yet
 
-    def start_action(self, text):
-        self.action = {"text": text, "t0": time.time(), "service_at": None, "converged_at": None}
-        log(text, "action")
+    def start_action(self, kind, text):
+        now = time.time()
+        overlaps = self.experiment["id"] if self.experiment and self.experiment["settled"] is None else None
+        if overlaps:
+            self.finish(now, interrupted=True)
+        net = (self.last_tick or {}).get("network", {})
+        flows = {f["host"]: f for f in (self.last_tick or {}).get("flows", [])}
+        self.experiment = {
+            "id": self.next_id, "kind": kind, "text": text, "expected": EXPECT.get(kind, ""), "t0": now,
+            "overlaps": overlaps, "first_effect": None, "first_effect_text": None,
+            "peak_down": 0, "peak_hijacked": 0, "peak_loops": 0.0, "outage_s": 0.0,
+            "settled": None, "min_s": MIN_WINDOW.get(kind, (3, ""))[0], "min_why": MIN_WINDOW.get(kind, (3, ""))[1],
+            "base_served": net.get("served"), "base_hijacked": len(net.get("hijacked", [])),
+            "base_hops": {h: f.get("hops") for h, f in flows.items()}, "last_t": now}
+        self.next_id += 1
+        CURRENT_EXPERIMENT[0] = self.experiment["id"]
+        log(text + (f" (while #{overlaps} was still settling)" if overlaps else ""), "action")
+        return self.experiment["id"]
+
+    def finish(self, now, interrupted=False):
+        e = self.experiment
+        e["settled"] = round(now - e["t0"], 1)
+        e["interrupted"] = interrupted
+        self.results.appendleft({k: v for k, v in e.items() if k not in ("base_hops", "last_t", "min_why")})
+        if not interrupted:
+            effect = f"first effect after {e['first_effect']} s ({e['first_effect_text']})" if e["first_effect"] is not None else "no visible effect"
+            log(f"#{e['id']} settled after {e['settled']} s: {effect}; up to {e['peak_down']} customers without "
+                f"service, {e['outage_s']:.1f} customer-seconds of outage", "summary")
+
+    def enqueue(self, description, fn):
+        self.queue.append((description, fn))
+        log(f"queued until the network settles: {description}", "queued")
+        return len(self.queue)
+
+    def track(self, now, net, flows, churn):
+        """Attribute what changed to the running experiment; decide whether it has settled"""
+        key = tuple((f["host"], f["state"]) for f in flows)
+        if key != self.flow_key:
+            self.flow_key, self.flow_changed_at = key, now
+        routing_calm = net["converged"]
+        service_stable = now - self.flow_changed_at >= SETTLE_SERVICE_S
+        e = self.experiment
+        # What still has to happen before the consequences are complete
+        waiting = []
+        if net["up"] < net["running"]:
+            waiting.append(f"{net['running'] - net['up']} running routers not reporting their state")
+        elif not routing_calm:
+            quiet = now - self.calm_since if self.calm_since else 0
+            waiting.append(f"routes changing ({net['churn']}/s)" if net["churn"] > 0
+                           else f"no route change for {quiet:.0f} of {SETTLE_ROUTING_S} s")
+        if not service_stable:
+            waiting.append(f"customer service changed {now - self.flow_changed_at:.0f} s ago (needs {SETTLE_SERVICE_S} s unchanged)")
+        if net["hijacked"] and not lab.hijacking:
+            waiting.append(f"forged routes still in {len(net['hijacked'])} routers: they expire at the RIP timeout")
+        if e and e["settled"] is None and now - e["t0"] < e["min_s"]:
+            waiting.append(f"{e['min_why'] or 'minimum observation'}: until +{e['min_s']} s")
+        self.waiting = waiting
+        if e and e["settled"] is None:
+            dt, e["last_t"] = now - e["last_t"], now
+            down = net["customers"] - net["served"]
+            e["outage_s"] += down * dt
+            e["peak_down"] = max(e["peak_down"], down)
+            e["peak_hijacked"] = max(e["peak_hijacked"], len(net["hijacked"]))
+            e["peak_loops"] = max(e["peak_loops"], net["loops"])
+            if e["first_effect"] is None:
+                moved = [f["host"] for f in flows if f.get("hops") is not None and e["base_hops"].get(f["host"]) not in (None, f["hops"])]
+                what = (f"{down} customers lost service" if e["base_served"] is not None and net["served"] < e["base_served"]
+                        else (f"{len(net['hijacked'])} routers hijacked" if len(net["hijacked"]) > e["base_hijacked"]
+                              else f"forged routes expiring ({len(net['hijacked'])} routers still hijacked)")
+                        if len(net["hijacked"]) != e["base_hijacked"]
+                        else f"paths changed for {', '.join(moved[:4])}" if moved
+                        else "routes changing" if churn > 0 else None)
+                if what:
+                    e["first_effect"], e["first_effect_text"] = round(now - e["t0"], 1), what
+                    log(f"#{e['id']} first effect after {e['first_effect']} s: {what}", "effect")
+            if not waiting:
+                self.finish(now)
+        self.settled = (e is None or e["settled"] is not None) and not waiting and not self.dispatching
+        if self.settled and self.queue:
+            # One at a time, in order: the next waits until this one's experiment has settled
+            description, fn = self.queue.pop(0)
+            self.dispatching = True
+            threading.Thread(target=run_queued, args=(description, fn), daemon=True).start()
+            self.settled = False
+        return routing_calm, service_stable
+
+    def disturbances(self, net):
+        """What is currently not as built, with the action that undoes it"""
+        out = []
+        for lid, state in lab.link_state.items():
+            if state != "up" and lid in lab.links:
+                l = lab.links[lid]
+                out.append({"text": f"{l['a']}–{l['b']} {'cut' if state == 'cut' else 'silently failing'}",
+                            "undo": ["/api/link", {"id": lid, "action": "restore"}]})
+        for name, n in lab.nodes.items():
+            if name in lab.routers and n["status"] != "started":
+                out.append({"text": f"{name} stopped", "undo": ["/api/node", {"name": name, "action": "start"}]})
+        if lab.misconfigured:
+            out.append({"text": f"{metro.MISCONFIGURABLE} speaks RIP to its customer",
+                        "undo": ["/api/scenario", {"action": "fix"}]})
+        if lab.hijacking:
+            out.append({"text": f"{metro.HIJACKER} announcing forged routes", "undo": ["/api/scenario", {"action": "stop_hijack"}]})
+        elif net["hijacked"]:
+            out.append({"text": f"forged routes still in {len(net['hijacked'])} routers (they age out after {T} s)", "undo": None})
+        return out
 
     def run(self):
         while True:
@@ -451,28 +606,38 @@ class Publisher(threading.Thread):
         calm = churn < 0.05
         self.calm_since = (self.calm_since or now) if calm else None
         running = [n for n in lab.routers if lab.nodes.get(n, {}).get("status") == "started"]
-        converged = bool(up) and len(up) == len(running) and self.calm_since is not None and now - self.calm_since >= 3
+        converged = bool(up) and len(up) == len(running) and self.calm_since is not None and now - self.calm_since >= SETTLE_ROUTING_S
         if converged != self.converged and self.converged is not None:
-            if converged and self.action and not self.action["converged_at"]:
-                self.action["converged_at"] = now
-            log("routing converged" if converged else "routing is changing", "routing")
+            log("routing converged" if converged else
+                ("routing is changing" if churn > 0 else "routers not reporting their state"), "routing")
         self.converged = converged
         flows = [p.summary(now) for p in probes.values()]
         served = sum(1 for f in flows if f["state"] in ("ok", "degraded"))   # replies in the last second
-        if self.action and not self.action["service_at"] and served == len(flows) and now - self.action["t0"] > 1:
-            self.action["service_at"] = now
-            log(f"all {len(flows)} customers have service ({now - self.action['t0']:.1f} s after: "
-                f"{self.action['text']})", "summary")
-        hub.publish({"type": "tick", "routers": per_router, "links": links, "flows": flows,
-                     "network": {"converged": converged, "complete": complete, "up": len(up),
-                                 "networks": max((r["routes"] for r in up), default=0),
-                                 "routers": len(lab.routers), "churn": round(churn, 1), "loops": round(loops, 1),
-                                 "served": served, "customers": len(flows), "hijacked": routed_to_hijacker,
-                                 "expected": lab.expected},
-                     "action": self.action and {**self.action, "elapsed": round(now - self.action["t0"], 1)},
-                     "scenario": {"misconfigured": lab.misconfigured, "hijacking": lab.hijacking},
-                     "rate": {"poll": routers.interval, "publish": PUBLISH_INTERVAL, "probe": PROBE_INTERVAL,
-                              "choices": POLL_INTERVALS}})
+        if now - self.last_discover > 3:
+            self.last_discover = now
+            try:
+                lab.discover()          # notice routers stopped or started outside the page
+            except Exception:
+                pass
+        net = {"converged": converged, "complete": complete, "up": len(up), "running": len(running),
+               "networks": max((r["routes"] for r in up), default=0),
+               "routers": len(lab.routers), "churn": round(churn, 1), "loops": round(loops, 1),
+               "served": served, "customers": len(flows), "hijacked": routed_to_hijacker, "expected": lab.expected}
+        routing_calm, service_stable = self.track(now, net, flows, churn)
+        e = self.experiment
+        status = {"settled": self.settled, "routing_calm": routing_calm, "service_stable": service_stable,
+                  "waiting": self.waiting,
+                  "service_stable_for": round(now - self.flow_changed_at, 1),
+                  "disturbances": self.disturbances(net), "queue": [d for d, _ in self.queue],
+                  "experiment": e and {k: v for k, v in e.items() if k not in ("base_hops", "last_t")} | {"elapsed": round(now - e["t0"], 1)},
+                  "results": list(self.results), "settle_rule": [SETTLE_ROUTING_S, SETTLE_SERVICE_S]}
+        tick = {"type": "tick", "routers": per_router, "links": links, "flows": flows, "network": net,
+                "status": status,
+                "scenario": {"misconfigured": lab.misconfigured, "hijacking": lab.hijacking},
+                "rate": {"poll": routers.interval, "publish": PUBLISH_INTERVAL, "probe": PROBE_INTERVAL,
+                         "choices": POLL_INTERVALS}}
+        self.last_tick = tick
+        hub.publish(tick)
 
 
 publisher = Publisher()
@@ -492,20 +657,20 @@ def link_action(lid, action):
         if l["b"] not in lab.routers or l["a"] not in lab.routers:
             gns3("PUT", f"/projects/{lab.pid}/links/{lid}", {"suspend": True})
         lab.link_state[lid] = "cut"
-        publisher.start_action(f"cable cut: {label} (both ends see the link go down)")
+        return "cut", f"cable cut: {label} (both ends see the link go down)"
     elif action == "silent":
         # 100% loss in ubridge: frames vanish, both NICs keep link. (A GNS3 suspend would
         # also take the QEMU link down, which routers notice at once.)
         gns3("PUT", f"/projects/{lab.pid}/links/{lid}", {"filters": {"packet_loss": [100]}})
         lab.link_state[lid] = "silent"
-        publisher.start_action(f"silent failure: {label} (frames vanish, links stay up)")
+        return "silent", f"silent failure: {label} (frames vanish, links stay up)"
     elif action == "restore":
         gns3("PUT", f"/projects/{lab.pid}/links/{lid}", {"suspend": False, "filters": {}})
         for end, port in ((l["a"], l["a_port"]), (l["b"], l["b_port"])):
             if end in lab.routers:
                 monitor(end, f"set_link gns3-{port} on")
         lab.link_state[lid] = "up"
-        publisher.start_action(f"link restored: {label}")
+        return "restore", f"link restored: {label}"
     else:
         raise ValueError("action: cut, silent or restore")
 
@@ -516,7 +681,7 @@ def node_action(name, action):
         raise ValueError("unknown node or action")
     gns3("POST", f"/projects/{lab.pid}/nodes/{n['node_id']}/{action}", {})
     lab.discover()
-    publisher.start_action(f"router {name} {'crashed (stopped)' if action == 'stop' else 'started'}")
+    return action, f"router {name} {'crashed (stopped)' if action == 'stop' else 'started'}"
 
 
 def set_x7(rip_everywhere):
@@ -532,22 +697,23 @@ def scenario(action):
     h7 = lab.container(metro.HIJACKER)
     if action == "misconfigure":
         set_x7(True)
-        publisher.start_action(f"{metro.MISCONFIGURABLE} misconfigured: RIP on every port, its customer port included")
+        return "misconfigure", f"{metro.MISCONFIGURABLE} misconfigured: RIP on every port, its customer port included"
     elif action == "fix":
         set_x7(False)
-        publisher.start_action(f"{metro.MISCONFIGURABLE} fixed: RIP only towards the aggregation routers")
+        return "fix", f"{metro.MISCONFIGURABLE} fixed: RIP only towards the aggregation routers"
     elif action == "hijack":
         src = lab.hosts[metro.HIJACKER]["cidr"].split("/")[0]
         subprocess.run(["docker", "exec", "-d", h7, "python3", "-c", HIJACK_AGENT, src, *HIJACK_PREFIXES], check=True)
         lab.hijacking = True
-        publisher.start_action(f"{metro.HIJACKER} (compromised) announces {', '.join(HIJACK_PREFIXES)} with metric 1")
+        return "hijack", f"{metro.HIJACKER} (compromised) announces {', '.join(HIJACK_PREFIXES)} with metric 1"
     elif action == "stop_hijack":
         subprocess.run(["docker", "exec", h7, "pkill", "-f", HIJACK_MARKER])
         lab.hijacking = False
-        publisher.start_action(f"{metro.HIJACKER} stopped announcing")
+        return "stop_hijack", f"{metro.HIJACKER} stopped announcing"
     elif action == "withdraw":
         lid = next(i for i, l in lab.links.items() if {l["a"], l["b"]} == {"C1", "S1"})
         link_action(lid, "cut")
+        return "withdraw", "server network withdrawn (cable C1–S1 cut)"
     elif action == "reset":
         if lab.hijacking:
             subprocess.run(["docker", "exec", h7, "pkill", "-f", HIJACK_MARKER])
@@ -561,9 +727,36 @@ def scenario(action):
             if n["status"] != "started":
                 gns3("POST", f"/projects/{lab.pid}/nodes/{n['node_id']}/start", {})
         lab.discover()
-        publisher.start_action("reset: every link up, every router running, X7 fixed, no hijack")
+        return "reset", "reset: every link up, every router running, X7 fixed, no hijack"
     else:
         raise ValueError("unknown scenario action")
+
+
+def dispatch(path, body):
+    if path == "/api/link":
+        return link_action(body.get("id"), body.get("action"))
+    if path == "/api/node":
+        return node_action(body.get("name"), body.get("action"))
+    if path == "/api/scenario":
+        return scenario(body.get("action"))
+    raise ValueError("unknown action")
+
+
+def describe(path, body):
+    if path == "/api/link" and body.get("id") in lab.links:
+        l = lab.links[body["id"]]
+        return f"{body.get('action')} {l['a']}–{l['b']}"
+    return f"{body.get('action')} {body.get('name', '')}".strip()
+
+
+def run_queued(description, fn):
+    try:
+        kind, text = fn()
+        publisher.start_action(kind, text)
+    except Exception as e:
+        log(f"queued action failed: {description}: {e}", "error")
+    finally:
+        publisher.dispatching = False
 
 
 # ---- HTTP -------------------------------------------------------------------------
@@ -618,12 +811,16 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
-            if url.path == "/api/link":
-                link_action(body.get("id"), body.get("action"))
-            elif url.path == "/api/node":
-                node_action(body.get("name"), body.get("action"))
-            elif url.path == "/api/scenario":
-                scenario(body.get("action"))
+            if url.path in ("/api/link", "/api/node", "/api/scenario"):
+                # when=settled: run once the network has settled, so consequences don't mix
+                if body.get("when") == "settled" and not publisher.settled:
+                    position = publisher.enqueue(describe(url.path, body), lambda: dispatch(url.path, body))
+                    return self.reply(200, {"ok": True, "queued": position})
+                kind, text = dispatch(url.path, body)
+                return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text)})
+            elif url.path == "/api/queue/clear":
+                publisher.queue.clear()
+                log("queue cleared", "queued")
             elif url.path == "/api/rate":
                 routers.set_interval(float(body.get("poll", 0)))
             else:
