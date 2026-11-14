@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Build the "LazyDaysOS metro" GNS3 project: a provider-style network of 28 LazyDaysOS
-routers speaking RIP, with 16 customers, 2 servers and a NOC host (see metro.py).
+routers speaking RIP, with 16 customers, 2 servers and a NOC host (see metro.py), or with
+--metros 3 the "LazyDaysOS metro x3" project: three of them joined by backbone links
+(84 routers, 54 hosts).
 
-    python3 gns3/metro_lab.py build [--timers U,T,G] [--ram MB]   (defaults 5,30,20 and 32 MB)
+    python3 gns3/metro_lab.py build [--metros 1|3] [--timers U,T,G] [--ram MB]   (defaults 1, 5,30,20, 32 MB)
     python3 gns3/metro_lab.py start      (re)open the project and start every node
     python3 gns3/metro_lab.py delete
 
@@ -16,7 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import metro  # noqa: E402
 
 BASE = "http://127.0.0.1:3080/v2"
-PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro")
+METROS = 3 if "--metros" in sys.argv and sys.argv[sys.argv.index("--metros") + 1] == "3" else 1
+PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro x3" if METROS == 3 else "LazyDaysOS metro")
 IMAGE_NAME = "LazyDaysOS-metro.bin"
 IMAGE_DIR = os.path.expanduser("~/GNS3/images/QEMU")
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +66,7 @@ def build(timers, ram):
         if needed not in templates:
             sys.exit(f"the '{needed}' template is missing (run throughput_lab.py once, or create it)")
 
-    routers, links, hosts = metro.topology(timers)
+    routers, links, hosts = metro.topology(METROS, timers)
     # auto_close off: GNS3 otherwise closes the project (stopping every node) when the
     # last GUI client disconnects, even while the dashboard is using it
     pid = call("POST", "/projects", {"name": PROJECT, "auto_close": False})["project_id"]
@@ -91,11 +94,13 @@ def build(timers, ram):
         call("POST", f"/projects/{pid}/links", {"nodes": [
             {"node_id": ids[name], "adapter_number": 0, "port_number": 0},
             {"node_id": ids[h["router"]], "adapter_number": h["port"], "port_number": 0}]})
-    for text, y in (("core: full mesh", -175), ("aggregation: dual-homed to the core", -345),
-                    ("access: dual-homed to aggregation, one customer each", -540)):
+    labels = ([("core: full mesh", -60, -175), ("aggregation: dual-homed to the core", -60, -345),
+               ("access: dual-homed to aggregation, one customer each", -60, -540)] if METROS == 1 else
+              [(f"Metro {m} ({metro.block(m)})", cx - 60, cy - 640) for m, (cx, cy) in enumerate(metro.CENTERS[3], 1)])
+    for text, x, y in labels:
         svg = ('<svg height="20" width="400"><text font-family="Segoe UI" font-size="12" fill="#64748b">'
                f'{text}</text></svg>')
-        call("POST", f"/projects/{pid}/drawings", {"x": -60, "y": y, "svg": svg})
+        call("POST", f"/projects/{pid}/drawings", {"x": x, "y": y, "svg": svg})
     print(f"project '{PROJECT}' ({pid}): {len(routers)} routers, {len(links)} router links, "
           f"{len(hosts)} hosts; RIP timers {timers}; starting...")
     t = time.time()

@@ -105,6 +105,20 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 - One misconfigured port plus one compromised device takes down the whole network for as long as the attacker likes, and the cleanup itself causes routing loops.
 - **Next:** RIPv2 authentication (RFC 4822, HMAC-SHA256) to reject the forged routes, with this experiment as the before/after test. Faster failure detection for silent failures (a BFD-style hello) would cut the 28 s outage.
 
+### Mesh of metros: how far a failure spreads with flat routing (2026-11-14)
+
+**Setup:** three metro networks (84 routers) joined in a triangle by backbone links, 48 customers, half of them using a server in the next metro, everything in one flat RIP domain. Every router holds all 219 networks.
+
+| Event | Routers that changed routes | Customers affected | Outage | Settled |
+|---|---|---|---|---|
+| Backbone M1–M2 cut | **84/84** (all 28 in each metro, including M3, which only carries the detour) | 8 (traffic between M1 and M2) | 56 customer-seconds (~7 s each) | 46 s |
+| Backbone restored | **84/84** | 0 | 0 | 24 s |
+
+**Takeaways for the thesis:**
+- With flat routing, one cable anywhere makes every router everywhere recompute.
+- Routing tables grow with the whole network: 219 of 256 routes at 3 metros. A 9-metro "fractal" would need ~650 routes and longer paths than RIP's 15-hop limit.
+- **Next:** route summarization at the metro border (each metro announces only its /12). Expected result: ~75 routes per router and failures contained in their metro. Measure the same experiment before and after.
+
 ### Status of WP0 (2026-11-14, branch `attack-surface`)
 
 - `measure/attack_surface.sh` puts LazyDaysOS and OpenWrt 19.07.10 x86-64 (factory defaults) into the `check_net.sh` topology and records:

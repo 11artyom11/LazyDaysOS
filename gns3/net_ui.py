@@ -31,17 +31,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import metro  # noqa: E402
 
 GNS3 = "http://127.0.0.1:3080/v2"
-PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro")
+METROS = int(os.environ.get("METROS", "1"))      # 1, or 3 for the mesh of metros (metro_lab.py --metros 3)
+PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro x3" if METROS == 3 else "LazyDaysOS metro")
+SPEC = metro.spec(METROS)
+X7, H7 = SPEC["misconfigurable"], SPEC["hijacker"]  # the scenario's misconfigured router and compromised customer
+VICTIM, VICTIM_LAN = SPEC["victim_server"], SPEC["victim_lan"]
 PORT = int(os.environ.get("NET_UI_PORT", "8095"))
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "net_ui.html")
 # Every finished experiment, one JSON object per line: survives restarts, and is the raw data for the thesis
-RESULTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "metro_experiments.jsonl")
+# (one file per GNS3 project: experiments on different topologies don't mix)
+RESULTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results",
+                            "experiments-" + re.sub(r"[^A-Za-z0-9]+", "-", os.environ.get(
+                                "METRO_PROJECT", "LazyDaysOS metro x3" if int(os.environ.get("METROS", "1")) == 3
+                                else "LazyDaysOS metro")).strip("-").lower() + ".jsonl")
 PROBE_INTERVAL = 0.1
 POLL_INTERVALS = (0.25, 0.5, 1.0, 2.0)  # router stats, in-band: ~16 KB per router per poll
 PUBLISH_INTERVAL = 0.1
 HIJACK_MARKER = "lazydays-hijack"
 NOC_MARKER = "net-ui-noc-agent"         # in the agent's argv, so pkill -f finds it
-HIJACK_PREFIXES = ("10.200.1.0/25", "10.200.1.128/25")
+_victim_net = VICTIM_LAN.split("/")[0].rsplit(".", 1)[0]
+HIJACK_PREFIXES = (f"{_victim_net}.0/25", f"{_victim_net}.128/25")   # more specific than the server's /24
 
 
 def gns3(method, path, body=None):
@@ -103,8 +112,8 @@ def log(text, kind="info", **extra):
 
 class Lab:
     def __init__(self):
-        self.routers, self.links_def, self.hosts = metro.topology()
-        self.expected = metro.networks()
+        self.routers, self.links_def, self.hosts = metro.topology(METROS)
+        self.expected = metro.networks(METROS)
         self.pid = None
         self.nodes = {}                 # name -> GNS3 node
         self.links = {}                 # link id -> {a, a_port, b, b_port, network, state}
@@ -130,12 +139,12 @@ class Lab:
             self.link_state.setdefault(l["link_id"], "cut" if l.get("suspend") else "silent" if silent else "up")
         self.links = links
         # Scenario state from reality, not memory: survives a restart of this dashboard
-        x7 = self.nodes.get(metro.MISCONFIGURABLE)
+        x7 = self.nodes.get(X7)
         if x7:
             cmdline = (x7.get("properties") or {}).get("kernel_command_line", "")
             self.misconfigured = " rip " in f" {cmdline} "
         try:
-            out = subprocess.run(["docker", "exec", self.container(metro.HIJACKER), "pgrep", "-f", HIJACK_MARKER],
+            out = subprocess.run(["docker", "exec", self.container(H7), "pgrep", "-f", HIJACK_MARKER],
                                  capture_output=True, text=True, timeout=5)
             self.hijacking = bool(out.stdout.strip())
         except (subprocess.SubprocessError, OSError):
@@ -150,7 +159,7 @@ class Lab:
         for name, n in self.nodes.items():
             meta = self.routers.get(name) or self.hosts.get(name) or {}
             # Positions from metro.py, not GNS3: the drawing doesn't depend on the canvas
-            nodes.append({"name": name, "id": n["node_id"], "status": n["status"],
+            nodes.append({"name": name, "id": n["node_id"], "status": n["status"], "probe": meta.get("probe_server"),
                           "x": meta.get("x", n["x"]), "y": meta.get("y", n["y"]),
                           "role": meta.get("role", "host"), "kind": "router" if name in self.routers else "host",
                           "ports": [c for c, _ in meta.get("ports", [])], "cidr": meta.get("cidr")})
@@ -162,8 +171,11 @@ class Lab:
                 network = ra["ports"][l["a_port"]][0]
             links.append({**l, "state": self.link_state.get(lid, "up"), "network": network})
         return {"project": PROJECT, "nodes": nodes, "links": links, "expected": self.expected,
-                "server": metro.SERVER, "misconfigured": self.misconfigured, "hijacking": self.hijacking,
-                "x7": metro.MISCONFIGURABLE, "h7": metro.HIJACKER, "timers": metro.TIMERS}
+                "server": SPEC["servers"][VICTIM], "victim": VICTIM, "victim_router": self.hosts[VICTIM]["router"],
+                "misconfigured": self.misconfigured, "hijacking": self.hijacking, "metros": METROS,
+                "x7": X7, "h7": H7, "timers": metro.TIMERS, "servers": SPEC["servers"],
+                "metro_labels": [{"text": f"Metro {m} · {metro.block(m)}", "x": cx, "y": cy - 600}
+                                 for m, (cx, cy) in enumerate(metro.CENTERS[METROS], 1)] if METROS > 1 else []}
 
 
 lab = Lab()
@@ -265,28 +277,35 @@ while True:
 
 
 class Routers(threading.Thread):
-    """Reads the NOC agent's stream; keeps the latest and previous sample per router"""
+    """One poller per metro, each running in that metro's NOC container and reading its
+    own routers in-band; keeps the latest and previous sample per router"""
 
     def __init__(self):
         super().__init__(daemon=True)
         self.lock = threading.Lock()
         self.latest = {}                # router -> sample
         self.prev = {}
-        self.interval = 0.5
-        self.proc = None
+        self.interval = 0.5 if METROS == 1 else 1.0
 
     def set_interval(self, interval):
         if interval not in POLL_INTERVALS:
             raise ValueError(f"interval: one of {POLL_INTERVALS}")
         self.interval = interval
-        stop_agents()                   # run() starts the agent again with the new interval
+        stop_agents()                   # the loops start their agents again with the new interval
 
     def run(self):
-        targets = {name: metro.addresses(r) for name, r in lab.routers.items()}
+        for noc in SPEC["nocs"]:
+            m = lab.hosts[noc]["metro"]
+            targets = {name: metro.addresses(r) for name, r in lab.routers.items() if r["metro"] == m}
+            threading.Thread(target=self.loop, args=(noc, targets), daemon=True).start()
+        while True:
+            time.sleep(3600)
+
+    def loop(self, noc, targets):
         while True:
             try:
-                proc = self.proc = subprocess.Popen(
-                    ["docker", "exec", lab.container("NOC"), "python3", "-u", "-c", NOC_AGENT, NOC_MARKER,
+                proc = subprocess.Popen(
+                    ["docker", "exec", lab.container(noc), "python3", "-u", "-c", NOC_AGENT, NOC_MARKER,
                      json.dumps(targets), f"admin:{metro.PASSWORD}", str(self.interval)],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 for line in proc.stdout:
@@ -299,7 +318,7 @@ class Routers(threading.Thread):
                             self.prev[s["router"]] = self.latest[s["router"]]
                         self.latest[s["router"]] = s
             except Exception as e:
-                print("NOC poller:", e, flush=True)
+                print(noc, "poller:", e, flush=True)
             time.sleep(0.2)
 
     def snapshot(self):
@@ -327,7 +346,7 @@ class Probe(threading.Thread):
         while True:
             try:
                 proc = subprocess.Popen(["docker", "exec", lab.container(self.host), "ping", "-n", "-D", "-O",
-                                         "-i", str(PROBE_INTERVAL), "-W", "1", metro.SERVER],
+                                         "-i", str(PROBE_INTERVAL), "-W", "1", lab.hosts[self.host]["probe"]],
                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 for line in proc.stdout:
                     self.parse(line.strip())
@@ -393,8 +412,8 @@ def stop_agents():
     """Killing a docker exec client leaves its process running in the container: kill
     our poller and probes inside the containers themselves (on start, on rate change)"""
     # busybox pkill -f only sees the start of a long command line: match its beginning
-    procs = [subprocess.Popen(["docker", "exec", lab.container("NOC"), "pkill", "-f", "python3 -u -c"],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+    procs = [subprocess.Popen(["docker", "exec", lab.container(noc), "pkill", "-f", "python3 -u -c"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for noc in SPEC["nocs"]]
     for host, meta in lab.hosts.items():
         if meta["role"] == "customer":
             procs.append(subprocess.Popen(["docker", "exec", lab.container(host), "pkill", "-x", "ping"],
@@ -404,7 +423,7 @@ def stop_agents():
 
 
 routers = Routers()
-probes = {h: Probe(h) for h, meta in metro.topology()[2].items() if meta["role"] == "customer"}
+probes = {h: Probe(h) for h, meta in metro.topology(METROS)[2].items() if meta["role"] == "customer"}
 
 
 # ---- derived network state, published twice a second ---------------------------------
@@ -419,15 +438,17 @@ EXPECT = {
     "stop": "Its neighbours see their links go down and reroute within seconds. A crashed access router's own "
             "customer stays offline until it is started again.",
     "start": "The router boots (~2 s) and relearns its routes; some paths move back to it.",
-    "withdraw": "C1 announces the server network as unreachable. Other routers may count to infinity: packets "
-                "loop (TTL expired) until the routes reach metric 16, then every customer loses the server.",
-    "misconfigure": "X7 reboots (~2 s). Nothing else changes: the risk stays latent until someone on its "
-                    "customer port speaks RIP.",
-    "hijack": "If X7 is misconfigured, the forged /25 routes spread hop by hop (1-5 s per hop): every router "
-              "within ~10-20 s, and every customer loses the server. If X7 is fixed, nothing happens.",
+    "withdraw": f"{metro.topology(METROS)[2][VICTIM]['router']} announces {VICTIM}'s network as unreachable. Other "
+                f"routers may count to infinity: packets loop (TTL expired) until the routes reach metric 16, then "
+                f"every customer using {VICTIM} loses it.",
+    "misconfigure": f"{X7} reboots (~2 s). Nothing else changes: the risk stays latent until someone on its "
+                    f"customer port speaks RIP.",
+    "hijack": f"If {X7} is misconfigured, the forged /25 routes spread hop by hop (1-5 s per hop) to every router "
+              f"{'in all three metros ' if METROS > 1 else ''}within ~10-20 s, and every customer using {VICTIM} loses "
+              f"it. If {X7} is fixed, nothing happens.",
     "stop_hijack": f"The forged routes stay until the RIP timeout ({T} s) expires them; count to infinity may "
                    f"loop packets for a few seconds after that.",
-    "fix": f"X7 reboots without RIP on its customer port. Forged routes elsewhere age out after {T} s.",
+    "fix": f"{X7} reboots without RIP on its customer port. Forged routes elsewhere age out after {T} s.",
     "reset": f"Everything goes back to normal; routing settles within ~10-{T} s.",
 }
 def single_homed(router):
@@ -440,12 +461,13 @@ def impact_of(kind, target):
     if kind == "stop" and target in lab.routers:
         notes = []
         for host, role in single_homed(target):
-            if host == "S1":
-                notes.append(f"S1, the server every customer uses, hangs only off {target}: every customer loses "
-                             f"the service until {target} is started again (a single point of failure)")
+            users = sum(1 for h in lab.hosts.values() if h.get("probe_server") == host)
+            if role == "server" and users:
+                notes.append(f"server {host} hangs only off {target}: the {users} customers using it lose the "
+                             f"service until {target} is started again (a single point of failure)")
             elif role == "noc":
-                notes.append(f"the NOC hangs off {target}: the dashboard loses all router data (monitoring is "
-                             f"in-band) until {target} is back")
+                notes.append(f"{host} hangs off {target}: the dashboard loses {'all' if METROS == 1 else 'that metro' + chr(39) + 's'} "
+                             f"router data (monitoring is in-band) until {target} is back")
             elif role == "server":
                 notes.append(f"{host} hangs off {target} and goes offline (not probed here)")
             elif role == "customer":
@@ -453,11 +475,13 @@ def impact_of(kind, target):
         return notes
     if kind in ("cut", "silent") and target in lab.links:
         l = lab.links[target]
+        if l["a"] in lab.routers and l["b"] in lab.routers and lab.routers[l["a"]]["metro"] != lab.routers[l["b"]]["metro"]:
+            return ["this is a backbone link between metros: traffic between them takes the way through the third metro"]
         for end in (l["a"], l["b"]):
-            if end == "S1":
-                return ["this is S1's only link: every customer loses the service"]
-            if end == "NOC":
-                return ["this is the NOC's only link: the dashboard loses all router data"]
+            if end in SPEC["servers"]:
+                return [f"this is {end}'s only link: every customer using it loses the service"]
+            if end in SPEC["nocs"]:
+                return [f"this is {end}'s only link: the dashboard loses its router data"]
             if end in lab.hosts and lab.hosts[end]["role"] == "customer":
                 return [f"this is {end}'s only link: {end} stays offline"]
     return []
@@ -587,7 +611,7 @@ class Publisher(threading.Thread):
                         else f"paths changed for {', '.join(moved[:4])}" if moved
                         else "routes changing" if churn > 0 else None)
                 if what:
-                    e["first_effect"], e["first_effect_text"] = round(now - e["t0"], 1), what
+                    e["first_effect"], e["first_effect_text"] = round(max(0.0, now - e["t0"]), 1), what
                     log(f"#{e['id']} first effect after {e['first_effect']} s: {what}", "effect")
             if not waiting:
                 self.finish(now)
@@ -605,19 +629,19 @@ class Publisher(threading.Thread):
         down = [f["host"] for f in flows if f["state"] not in ("ok", "degraded")]
         causes = []
         status = {n: m["status"] for n, m in lab.nodes.items()}
-        for host, role in (("S1", "server"), ("NOC", "noc")):
+        for host in list(SPEC["servers"]) + SPEC["nocs"]:
             router = lab.hosts[host]["router"]
             link_down = any(lab.link_state.get(i) != "up" for i, l in lab.links.items() if host in (l["a"], l["b"]))
             if status.get(router) != "started" or link_down:
-                why = f"{router} is stopped" if status.get(router) != "started" else f"its only link is {'cut' if link_down else 'down'}"
-                causes.append(f"server S1 unreachable: {why} (single point of failure)" if host == "S1"
-                              else f"NOC unreachable: {why}, so the dashboard has no router data")
+                why = f"{router} is stopped" if status.get(router) != "started" else "its only link is down"
+                causes.append(f"server {host} unreachable: {why} (single point of failure)" if host in SPEC["servers"]
+                              else f"{host} unreachable: {why}, so the dashboard has no data from its routers")
         for host in down:
             router = lab.hosts[host]["router"]
             if status.get(router) != "started":
                 causes.append(f"{host}: its access router {router} is stopped")
         if net["hijacked"]:
-            causes.append(f"{len(net['hijacked'])} routers send the server's traffic to {metro.HIJACKER}"
+            causes.append(f"{len(net['hijacked'])} routers send the server's traffic to {H7}"
                           + ("" if lab.hijacking else " (forged routes left over; they expire at the RIP timeout)"))
         if net["loops"] > 0:
             causes.append(f"{net['loops']} packets/s dying in routing loops")
@@ -637,10 +661,10 @@ class Publisher(threading.Thread):
             if name in lab.routers and n["status"] != "started":
                 out.append({"text": f"{name} stopped", "undo": ["/api/node", {"name": name, "action": "start"}]})
         if lab.misconfigured:
-            out.append({"text": f"{metro.MISCONFIGURABLE} speaks RIP to its customer",
+            out.append({"text": f"{X7} speaks RIP to its customer",
                         "undo": ["/api/scenario", {"action": "fix"}]})
         if lab.hijacking:
-            out.append({"text": f"{metro.HIJACKER} announcing forged routes", "undo": ["/api/scenario", {"action": "stop_hijack"}]})
+            out.append({"text": f"{H7} announcing forged routes", "undo": ["/api/scenario", {"action": "stop_hijack"}]})
         elif net["hijacked"]:
             out.append({"text": f"forged routes still in {len(net['hijacked'])} routers (they age out after {T} s)", "undo": None})
         return out
@@ -677,7 +701,7 @@ class Publisher(threading.Thread):
             hijack = [r for r in s["routes"] if r[0] in HIJACK_PREFIXES]
             if hijack:
                 routed_to_hijacker.append(name)
-            server_route = next((r for r in s["routes"] if r[0] == "10.200.1.0/24"), None)
+            server_route = next((r for r in s["routes"] if r[0] == VICTIM_LAN), None)
             per_router[name] = {"state": "up", "routes": len([r for r in s["routes"] if r[0] not in HIJACK_PREFIXES]),
                                 "cpu": s["cpu"], "churn": round(changes, 1), "ttl_exceeded": round(ttl, 1),
                                 "hijacked": bool(hijack),
@@ -774,7 +798,7 @@ def node_action(name, action):
 
 
 def set_x7(rip_everywhere):
-    name = metro.MISCONFIGURABLE
+    name = X7
     n = lab.nodes[name]
     cmdline = metro.cmdline(lab.routers[name], metro.TIMERS, rip_everywhere)
     gns3("PUT", f"/projects/{lab.pid}/nodes/{n['node_id']}", {"properties": {"kernel_command_line": cmdline}})
@@ -783,26 +807,27 @@ def set_x7(rip_everywhere):
 
 
 def scenario(action):
-    h7 = lab.container(metro.HIJACKER)
+    h7 = lab.container(H7)
     if action == "misconfigure":
         set_x7(True)
-        return "misconfigure", f"{metro.MISCONFIGURABLE} misconfigured: RIP on every port, its customer port included"
+        return "misconfigure", f"{X7} misconfigured: RIP on every port, its customer port included"
     elif action == "fix":
         set_x7(False)
-        return "fix", f"{metro.MISCONFIGURABLE} fixed: RIP only towards the aggregation routers"
+        return "fix", f"{X7} fixed: RIP only towards the aggregation routers"
     elif action == "hijack":
-        src = lab.hosts[metro.HIJACKER]["cidr"].split("/")[0]
+        src = lab.hosts[H7]["cidr"].split("/")[0]
         subprocess.run(["docker", "exec", "-d", h7, "python3", "-c", HIJACK_AGENT, src, *HIJACK_PREFIXES], check=True)
         lab.hijacking = True
-        return "hijack", f"{metro.HIJACKER} (compromised) announces {', '.join(HIJACK_PREFIXES)} with metric 1"
+        return "hijack", f"{H7} (compromised) announces {', '.join(HIJACK_PREFIXES)} with metric 1"
     elif action == "stop_hijack":
         subprocess.run(["docker", "exec", h7, "pkill", "-f", HIJACK_MARKER])
         lab.hijacking = False
-        return "stop_hijack", f"{metro.HIJACKER} stopped announcing"
+        return "stop_hijack", f"{H7} stopped announcing"
     elif action == "withdraw":
-        lid = next(i for i, l in lab.links.items() if {l["a"], l["b"]} == {"C1", "S1"})
+        router = lab.hosts[VICTIM]["router"]
+        lid = next(i for i, l in lab.links.items() if {l["a"], l["b"]} == {router, VICTIM})
         link_action(lid, "cut")
-        return "withdraw", "server network withdrawn (cable C1–S1 cut)"
+        return "withdraw", f"server network withdrawn (cable {router}–{VICTIM} cut)"
     elif action == "reset":
         return reset()
     else:
@@ -827,15 +852,15 @@ def reset():
     if started:
         done.append("started " + ", ".join(started))
     if lab.hijacking:
-        subprocess.run(["docker", "exec", lab.container(metro.HIJACKER), "pkill", "-f", HIJACK_MARKER])
+        subprocess.run(["docker", "exec", lab.container(H7), "pkill", "-f", HIJACK_MARKER])
         lab.hijacking = False
-        done.append(f"stopped {metro.HIJACKER}'s announcements")
+        done.append(f"stopped {H7}'s announcements")
     if lab.misconfigured:
         try:
             set_x7(False)
-            done.append(f"fixed {metro.MISCONFIGURABLE}")
+            done.append(f"fixed {X7}")
         except Exception as e:
-            errors.append(f"fix {metro.MISCONFIGURABLE}: {e}")
+            errors.append(f"fix {X7}: {e}")
     restored = []
     for lid, state in list(lab.link_state.items()):
         if state != "up" and lid in lab.links:
@@ -852,7 +877,9 @@ def reset():
     if restored:
         done.append("restored " + ", ".join(restored))
     lab.discover()
-    text = "reset: " + ("; ".join(done) if done else "nothing to undo, the network is as built")
+    if not done and not errors:
+        return "noop", "reset: nothing to undo, the network is as built"
+    text = "reset: " + "; ".join(done)
     if errors:
         text += " (failed: " + "; ".join(errors) + ")"
     return "reset", text
@@ -947,6 +974,8 @@ class Handler(BaseHTTPRequestHandler):
                     position = publisher.enqueue(describe(url.path, body), lambda: dispatch(url.path, body), target_of(body))
                     return self.reply(200, {"ok": True, "queued": position})
                 kind, text = dispatch(url.path, body)
+                if kind == "noop":
+                    return self.reply(200, {"ok": True, "text": text})     # nothing happened: no experiment
                 return self.reply(200, {"ok": True, "experiment": publisher.start_action(kind, text, target_of(body)),
                                         "text": text})
             elif url.path == "/api/queue/clear":

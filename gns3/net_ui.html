@@ -173,7 +173,7 @@ svg text { font-family: system-ui, sans-serif; }
       <table class="results" id="results"><thead><tr><th>#</th><th>action</th><th title="time until something changed">effect</th><th title="most customers without service at once">down</th><th title="sum over customers of seconds without service">outage</th><th title="time until routing calm and service stable">settled</th></tr></thead><tbody></tbody></table>
     </section>
     <section>
-      <h2>Customers → server S1 <span class="muted" id="served"></span></h2>
+      <h2>Customers → their server <span class="muted" id="served"></span></h2>
       <div class="customers" id="customers"></div>
     </section>
     <section>
@@ -182,6 +182,9 @@ svg text { font-family: system-ui, sans-serif; }
         <div class="card"><div class="name">Cable cut</div>
           <div class="why">Both NICs see the link go down, so RIP withdraws the routes at once. Pick any link on the map, or:</div>
           <div class="row"><button data-cut="C1|A1">Cut C1–A1</button><button data-cut="C1|C2">Cut C1–C2</button></div></div>
+        <div class="card" id="backbone-card" hidden><div class="name">Backbone between metros</div>
+          <div class="why">The metros are joined in a triangle. Cut one backbone link: traffic between those two metros must go through the third. Every router in all three metros learns about it (flat RIP, no summarization).</div>
+          <div class="row" id="backbone-buttons"></div></div>
         <div class="card"><div class="name">Silent failure</div>
           <div class="why">Frames vanish but both NICs keep link (a failed switch in between, a dead fibre amplifier). Only the RIP timeout (30 s here) notices.</div>
           <div class="row"><button data-silent="C1|A1">Silence C1–A1</button><button data-silent="C1|C2">Silence C1–C2</button></div></div>
@@ -215,7 +218,7 @@ svg text { font-family: system-ui, sans-serif; }
 "use strict";
 const $ = (id) => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
-const S = { nodes: {}, links: {}, tick: null, hist: { churn: [], loops: [], served: [] }, seq: 0, pop: null };
+const S = { probe: {}, metros: 1, nodes: {}, links: {}, tick: null, hist: { churn: [], loops: [], served: [] }, seq: 0, pop: null };
 const WINDOW = 120;                              // seconds of history in the charts
 
 function svgEl(tag, attrs, parent) {
@@ -264,6 +267,9 @@ function buildMap(state) {
   svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
   const byName = Object.fromEntries(state.nodes.map((n) => [n.name, n]));
   const gl = svgEl("g", {}, svg), gn = svgEl("g", {}, svg);
+  for (const m of state.metro_labels || []) {
+    svgEl("text", { x: m.x, y: m.y, "text-anchor": "middle", "font-size": 44, "font-weight": 700, fill: "var(--muted)", opacity: .8 }, gl).textContent = m.text;
+  }
   for (const l of state.links) {
     const a = byName[l.a], b = byName[l.b];
     if (!a || !b) continue;
@@ -389,7 +395,7 @@ function renderTick(t) {
   t.flows.forEach((f, i) => {
     const d = box.children[i];
     d.className = "cust " + f.state;
-    d.querySelector(".top span").textContent = f.host;
+    d.querySelector(".top span").textContent = f.host + (S.probe[f.host] && S.metros > 1 ? " → " + S.probe[f.host].replace("-S1", "") : "");
     d.querySelector(".st").textContent = f.state === "ok" ? "" : f.state;
     d.querySelector(".meta").textContent = f.state === "unknown" ? "starting…" :
       `${f.loss}% loss · ${f.hops ?? "–"} hops · ${f.rtt ?? "–"} ms`;
@@ -519,6 +525,38 @@ function addLog(ev) {
   while ($("log").children.length > 200) $("log").lastChild.remove();
 }
 
+/* Cards are written for one metro; with several, buttons and texts get the metro-1 names */
+function adaptCards(state) {
+  S.metros = state.metros;
+  S.probe = Object.fromEntries(state.nodes.filter((n) => n.probe).map((n) => [n.name, n.probe]));
+  const fix = (name) => (state.metros > 1 && !name.startsWith("M") ? "M1-" + name : name);
+  document.querySelectorAll("[data-cut],[data-silent],[data-stop],[data-start]").forEach((b) => {
+    for (const key of ["cut", "silent", "stop", "start"]) {
+      if (b.dataset[key] === undefined) continue;
+      b.dataset[key] = b.dataset[key].split("|").map(fix).join("|");
+      b.textContent = b.textContent.replace(/\b([CAX]\d+)\b/g, (n) => fix(n));
+    }
+  });
+  document.querySelectorAll(".card .why").forEach((w) => {
+    w.textContent = w.textContent.replaceAll("X7", state.x7).replaceAll("H7", state.h7)
+      .replace("cut C1–S1", `cut ${state.victim_router}–${state.victim}`);
+  });
+  document.querySelectorAll("[data-scenario]").forEach((b) => { b.textContent = b.textContent.replace("X7", state.x7); });
+  if (state.metros > 1) {
+    $("backbone-card").hidden = false;
+    const backbone = state.links.filter((l) => l.a.split("-")[0] !== l.b.split("-")[0] && l.a.startsWith("M") && l.b.startsWith("M"));
+    $("backbone-buttons").replaceChildren(...backbone.flatMap((l) => {
+      const label = `${l.a.split("-")[0]}–${l.b.split("-")[0]}`;
+      return [["cut", "Cut "], ["silent", "Silence "]].map(([action, verb]) => {
+        const b = document.createElement("button");
+        b.textContent = verb + label;
+        b.onclick = () => act("/api/link", { id: l.id, action });
+        return b;
+      });
+    }));
+  }
+}
+
 /* ---------- wiring ---------- */
 function linkBetween(a, b) {
   return Object.values(S.links).find((l) => (l.def.a === a && l.def.b === b) || (l.def.a === b && l.def.b === a));
@@ -547,9 +585,12 @@ async function boot() {
     const state = await r.json();
     if (!r.ok) throw new Error(state.error);
     $("banner").style.display = "none";
-    $("subtitle").textContent = `${state.nodes.filter((n) => n.kind === "router").length} routers speaking RIPv2 (timers ${state.timers} s) · `
-      + `${state.nodes.filter((n) => n.role === "customer").length} customers pinging server S1 (${state.server}) every 100 ms`;
+    const customers = state.nodes.filter((n) => n.role === "customer").length;
+    $("subtitle").textContent = `${state.metros > 1 ? state.metros + " metros, " : ""}${state.nodes.filter((n) => n.kind === "router").length} routers speaking RIPv2 (timers ${state.timers} s) · `
+      + (state.metros > 1 ? `${customers} customers each pinging their own or the next metro's server every 100 ms`
+                          : `${customers} customers pinging server ${state.victim} (${state.server}) every 100 ms`);
     buildMap(state);
+    adaptCards(state);
   } catch (e) {
     $("banner").textContent = "Can't load the lab: " + e.message;
     $("banner").style.display = "block";

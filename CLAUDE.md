@@ -137,6 +137,13 @@ The network stack (`kernel/net/*.c`, `kernel/random.c`, `kernel/cmdline.c`, `lib
     - router crash = node stop;
     - route hijack: X7 rebooted with `rip` on every port, then H7 announces 10.200.1.0/25 and /128/25 with metric 1 from UDP port 520;
     - reset.
+- **Mesh of metros:** `python3 gns3/metro_lab.py build --metros 3` builds "LazyDaysOS metro x3" (84 routers, 165 links, 54 hosts, 219 networks in every routing table; about 3.5 GB of RAM). `METROS=3 python3 gns3/net_ui.py` runs the dashboard for it.
+  - Three metros in a triangle: Mm-C3 is linked to the next metro's C4, so the backbone uses the core ports freed by dropping S2. Names carry a metro prefix (`M2-X7`).
+  - Metro m owns `10.(16m).0.0/12`, so it can later be summarized as one route.
+  - Odd customers ping their own metro's S1, even ones the next metro's.
+  - One poller per metro runs in that metro's NOC (default 1 s).
+  - Results go to `gns3/results/experiments-<project>.jsonl`, one file per project.
+  - Flat RIP is at its limits here: 219 of 256 routes, paths up to 6 routers, and a backbone cut makes all 84 routers recompute.
 - `gns3/mesh_lab.py build [RxC] [--ram MB] [--timers U,T,G]` builds the project "LazyDaysOS mesh" (`MESH_PROJECT` for another name): an R×C torus of routers speaking RIP (default 10×10: 100 routers, 200 links), 32 MB each like the TL-WR841N, with netshoot hosts on R-0-0 and the farthest router.
   - Addresses are `10.1.(r*C+c).0/24` east, `10.2.(r*C+c).0/24` south.
   - It boots `~/GNS3/images/QEMU/LazyDaysOS-mesh.bin` (copied from `./LazyDaysOS.bin`), so the throughput lab's kernel is untouched.
