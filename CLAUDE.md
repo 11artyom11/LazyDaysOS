@@ -117,9 +117,10 @@ The network stack (`kernel/net/*.c`, `kernel/random.c`, `kernel/cmdline.c`, `lib
   - Topology: 4 core routers in a full mesh, 8 aggregation routers dual-homed to the core, 16 access routers dual-homed to aggregation, one customer each. 28 routers, 54 links, servers S1/S2 on C1/C3, a NOC host on C2.
   - Configuration: RIP timers 5,30,20, 32 MB per router. `metro.py` is the single definition (addresses, ports, layout) that both the builder and the dashboard import.
   - `python3 gns3/metro_lab.py build|start|delete`: the routers boot `LazyDaysOS-metro.bin`, a copy. The project is created with **`auto_close: false`**: otherwise GNS3 closes a project, stopping every node, as soon as the last GUI client disconnects.
-  - `python3 gns3/net_ui.py` → http://localhost:8095. Inputs:
-    - a Python poller inside the NOC container reads every router's `/api/stats` in-band (≈10 KB/router/s, the dominant traffic on the map);
-    - each customer runs `ping -D -O -i 0.2` to S1 (loss, hops from the TTL, ICMP "time to live exceeded" = looping).
+  - `python3 gns3/net_ui.py` → http://localhost:8095. The page updates 10×/s. Inputs:
+    - a Python poller inside the NOC container reads every router's `/api/stats` in-band, about 16 KB per read. Each router has its own loop, staggered over the interval (selectable on the page: 0.25–2 s, default 0.5), so a dead router only delays itself. A router counts as down after two failed reads. All-at-once reads overflow the NOC router's transmit ring;
+    - each customer runs `ping -D -O -i 0.1` to S1 (loss, hops from the TTL, ICMP "time to live exceeded" = looping).
+  - **Killing a `docker exec` client does not kill its process in the container.** `stop_agents()` pkills the poller (marker `net-ui-noc-agent`) and the pings inside the containers on start, on rate change and on exit. Leftovers from earlier runs once made 23 pollers hammer the routers, whose 16 TCP slots filled up, so they stopped answering HTTP.
   - Derived values: converged = every running router reports and no route changed for 3 s; served = a reply in the last second; outage and recovery times per action.
   - Controls:
     - cable cut = QEMU `set_link gns3-N off` on both ends, through the monitor port found in `ps`;

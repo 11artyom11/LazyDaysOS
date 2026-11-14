@@ -7,7 +7,7 @@ resilience and security, measured while you break things.
 What it measures (stdlib only):
   * every router's /api/stats once a second, fetched in-band by a poller running in
     the NOC container (routes, RIP counters, TTL expiries, port counters, CPU)
-  * every customer's service: a ping to server S1 every 200 ms from each customer
+  * every customer's service: a ping to server S1 every 100 ms from each customer
     container (loss, latency, hop count from the TTL, ICMP errors such as
     "time to live exceeded", which means the packet was looping)
   * derived: convergence (every router has every network, no route changes), route
@@ -34,8 +34,11 @@ GNS3 = "http://127.0.0.1:3080/v2"
 PROJECT = os.environ.get("METRO_PROJECT", "LazyDaysOS metro")
 PORT = int(os.environ.get("NET_UI_PORT", "8095"))
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "net_ui.html")
-PROBE_INTERVAL = 0.2
+PROBE_INTERVAL = 0.1
+POLL_INTERVALS = (0.25, 0.5, 1.0, 2.0)  # router stats, in-band: ~16 KB per router per poll
+PUBLISH_INTERVAL = 0.1
 HIJACK_MARKER = "lazydays-hijack"
+NOC_MARKER = "net-ui-noc-agent"         # in the agent's argv, so pkill -f finds it
 HIJACK_PREFIXES = ("10.200.1.0/25", "10.200.1.128/25")
 
 
@@ -178,32 +181,53 @@ def monitor(node, command):
 # ---- measurement: routers (in-band from the NOC) and customers (pings) ----------------
 
 NOC_AGENT = r'''
-import json, sys, time, urllib.request, base64
+import json, sys, threading, time, urllib.request, base64
 routers = json.loads(sys.argv[1]); auth = "Basic " + base64.b64encode(sys.argv[2].encode()).decode()
-since = {}
-while True:
-    start = time.time()
-    for name, ips in routers.items():
-        stats = None
-        for ip in ips:
-            url = "http://%s/api/stats" % ip
-            try:
-                req = urllib.request.Request(url, headers={"Authorization": auth})
-                stats = json.load(urllib.request.urlopen(req, timeout=0.7)); break
-            except Exception:
-                continue
+interval = float(sys.argv[3])
+out = threading.Lock()
+def fetch(ips):
+    for ip in ips:
+        try:
+            req = urllib.request.Request("http://%s/api/stats" % ip, headers={"Authorization": auth})
+            return json.load(urllib.request.urlopen(req, timeout=0.8)), ip
+        except Exception:
+            continue
+    return None, None
+def poll(name, ips, offset):
+    # One loop per router: a dead router only slows itself (retried every 2 s). Down
+    # only after two failed polls in a row: one slow answer isn't a dead router.
+    # Loops are spread evenly over the interval: 28 responses of 16 KB arriving at
+    # once overflow the NOC router's transmit ring and stall the routers' TCP.
+    failures = 0
+    next_at = time.time() + offset
+    while True:
+        time.sleep(max(0.0, next_at - time.time()))
+        start = time.time()
+        stats, ip = fetch(ips)
+        failures = 0 if stats is not None else failures + 1
+        if stats is None and failures < 2:
+            time.sleep(0.1)
+            continue
         if stats is None:
-            print(json.dumps({"router": name, "t": time.time(), "down": True}), flush=True); continue
-        rip = stats.get("rip", {})
-        out = {"router": name, "t": time.time(), "uptime_ms": stats["system"]["uptime_ms"],
+            line = json.dumps({"router": name, "t": time.time(), "down": True})
+        else:
+            if ip != ips[0]:
+                ips = [ip] + [x for x in ips if x != ip]   # remember the address that answered
+            rip = stats.get("rip", {})
+            line = json.dumps({"router": name, "t": time.time(), "uptime_ms": stats["system"]["uptime_ms"],
                "cpu": stats["cpu"]["busy_permille"],
                "ports": [[p["name"], p["link"], p["tx_bytes"], p["rx_bytes"], p["tx_packets"]] for p in stats["interfaces"]],
                "routes": [[r["network"], r["gateway"], r["port"], r.get("metric"), r["origin"]] for r in stats["routes"]],
                "ttl_exceeded": stats["ipv4"]["ttl_exceeded"], "no_route": stats["ipv4"]["no_route"],
                "forwarded": stats["ipv4"]["forwarded"],
-               "rip": {k: rip.get(k, 0) for k in ("route_changes", "tx_triggered", "rx_bad", "rx_refused", "rx_responses")}}
-        print(json.dumps(out), flush=True)
-    time.sleep(max(0.05, 1.0 - (time.time() - start)))
+               "rip": {k: rip.get(k, 0) for k in ("route_changes", "tx_triggered", "rx_bad", "rx_refused", "rx_responses")}})
+        with out:
+            print(line, flush=True)
+        next_at = max(next_at + (interval if stats is not None else max(interval, 2.0)), time.time() + 0.02)
+for i, (name, ips) in enumerate(routers.items()):
+    threading.Thread(target=poll, args=(name, ips, i * interval / len(routers)), daemon=True).start()
+while True:
+    time.sleep(3600)
 '''
 
 HIJACK_AGENT = r'''
@@ -231,14 +255,23 @@ class Routers(threading.Thread):
         self.lock = threading.Lock()
         self.latest = {}                # router -> sample
         self.prev = {}
+        self.interval = 0.5
+        self.proc = None
+
+    def set_interval(self, interval):
+        if interval not in POLL_INTERVALS:
+            raise ValueError(f"interval: one of {POLL_INTERVALS}")
+        self.interval = interval
+        stop_agents()                   # run() starts the agent again with the new interval
 
     def run(self):
         targets = {name: metro.addresses(r) for name, r in lab.routers.items()}
         while True:
             try:
-                proc = subprocess.Popen(["docker", "exec", lab.container("NOC"), "python3", "-u", "-c", NOC_AGENT,
-                                         json.dumps(targets), f"admin:{metro.PASSWORD}"],
-                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                proc = self.proc = subprocess.Popen(
+                    ["docker", "exec", lab.container("NOC"), "python3", "-u", "-c", NOC_AGENT,
+                     json.dumps(targets), f"admin:{metro.PASSWORD}", str(self.interval), NOC_MARKER],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 for line in proc.stdout:
                     try:
                         s = json.loads(line)
@@ -250,7 +283,7 @@ class Routers(threading.Thread):
                         self.latest[s["router"]] = s
             except Exception as e:
                 print("NOC poller:", e, flush=True)
-            time.sleep(2)
+            time.sleep(0.2)
 
     def snapshot(self):
         with self.lock:
@@ -327,7 +360,7 @@ class Probe(threading.Thread):
         lost = sum(1 for r in window if not r[1])
         oks = [r for r in window if r[1]]
         errors = [r[4] for r in window if r[4]]
-        recent = window[-5:]                            # the last second
+        recent = window[-int(round(1 / PROBE_INTERVAL)):]   # the last second
         recent_lost = sum(1 for r in recent if not r[1])
         state = "down" if recent_lost == len(recent) else "degraded" if recent_lost else "ok"
         if state == "down" and errors and "loop" in errors[-1]:
@@ -337,6 +370,19 @@ class Probe(threading.Thread):
                 "error": errors[-1] if errors else None,
                 "outage_s": round(now - self.outage_start, 1) if self.outage_start else None,
                 "history": [1 if r[1] else (2 if r[4] and "loop" in r[4] else 0) for r in list(self.results)[-50:]]}
+
+
+def stop_agents():
+    """Killing a docker exec client leaves its process running in the container: kill
+    our poller and probes inside the containers themselves (on start, on rate change)"""
+    procs = [subprocess.Popen(["docker", "exec", lab.container("NOC"), "pkill", "-f", NOC_MARKER],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+    for host, meta in lab.hosts.items():
+        if meta["role"] == "customer":
+            procs.append(subprocess.Popen(["docker", "exec", lab.container(host), "pkill", "-x", "ping"],
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    for p in procs:
+        p.wait(timeout=15)
 
 
 routers = Routers()
@@ -362,7 +408,7 @@ class Publisher(threading.Thread):
                 self.publish()
             except Exception as e:
                 print("publisher:", e, flush=True)
-            time.sleep(0.5)
+            time.sleep(PUBLISH_INTERVAL)
 
     def publish(self):
         now = time.time()
@@ -424,7 +470,9 @@ class Publisher(threading.Thread):
                                  "served": served, "customers": len(flows), "hijacked": routed_to_hijacker,
                                  "expected": lab.expected},
                      "action": self.action and {**self.action, "elapsed": round(now - self.action["t0"], 1)},
-                     "scenario": {"misconfigured": lab.misconfigured, "hijacking": lab.hijacking}})
+                     "scenario": {"misconfigured": lab.misconfigured, "hijacking": lab.hijacking},
+                     "rate": {"poll": routers.interval, "publish": PUBLISH_INTERVAL, "probe": PROBE_INTERVAL,
+                              "choices": POLL_INTERVALS}})
 
 
 publisher = Publisher()
@@ -576,6 +624,8 @@ class Handler(BaseHTTPRequestHandler):
                 node_action(body.get("name"), body.get("action"))
             elif url.path == "/api/scenario":
                 scenario(body.get("action"))
+            elif url.path == "/api/rate":
+                routers.set_interval(float(body.get("poll", 0)))
             else:
                 return self.reply(404, {"error": "not found"})
         except (ValueError, RuntimeError, urllib.error.URLError, subprocess.CalledProcessError) as e:
@@ -595,6 +645,7 @@ def main():
         lab.discover()
     except Exception as e:
         sys.exit(str(e))
+    stop_agents()                       # leftovers of an earlier run would load the routers twice
     routers.start()
     for p in probes.values():
         p.start()
@@ -605,6 +656,8 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        stop_agents()
 
 
 if __name__ == "__main__":

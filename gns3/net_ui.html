@@ -39,6 +39,7 @@ header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; bord
 .pill.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; } .pill.ok .dot { background: var(--ok); }
 .pill.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; } .pill.warn .dot { background: var(--warn); }
 .pill.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; } .pill.bad .dot { background: var(--bad); }
+.pill select { font: inherit; font-size: 12.5px; background: transparent; color: inherit; border: 0; padding: 0; }
 .pill.loop { color: var(--loop); background: var(--loop-soft); border-color: transparent; } .pill.loop .dot { background: var(--loop); }
 button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 9px; padding: 6px 11px; cursor: pointer; }
 button:hover { border-color: var(--muted); }
@@ -104,6 +105,8 @@ svg text { font-family: system-ui, sans-serif; }
   <span class="pill" id="p-service"><span class="dot"></span><span>service</span></span>
   <span class="pill" id="p-loops"><span class="dot"></span><span>loops</span></span>
   <span class="pill" id="p-hijack"><span class="dot"></span><span>hijack</span></span>
+  <label class="pill" title="How often the NOC reads every router's /api/stats, in-band: about 16 KB per router per read, so 0.25 s is ~14 Mbit/s of monitoring traffic in the network">
+    router data <select id="rate"><option value="0.25">0.25 s</option><option value="0.5">0.5 s</option><option value="1">1 s</option><option value="2">2 s</option></select></label>
   <button id="theme" type="button">◐</button>
   <button id="reset" type="button" class="danger">Reset all</button>
 </header>
@@ -168,7 +171,7 @@ svg text { font-family: system-ui, sans-serif; }
 const $ = (id) => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
 const S = { nodes: {}, links: {}, tick: null, hist: { churn: [], loops: [], served: [] }, seq: 0, pop: null };
-const HIST = 240;                                // half-second samples: two minutes
+const WINDOW = 120;                              // seconds of history in the charts
 
 function svgEl(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -336,7 +339,8 @@ function renderTick(t) {
     if (strip.children.length !== h.length) strip.replaceChildren(...h.map(() => document.createElement("i")));
     h.forEach((v, k) => strip.children[k].className = v === 1 ? "" : v === 2 ? "loop" : "lost");
   });
-  push(S.hist.churn, n.churn); push(S.hist.loops, n.loops); push(S.hist.served, n.served);
+  push(S.hist.churn, t.ts, n.churn); push(S.hist.loops, t.ts, n.loops); push(S.hist.served, t.ts, n.served);
+  if (t.rate && document.activeElement !== $("rate")) $("rate").value = String(t.rate.poll);
   $("v-churn").textContent = n.churn; $("v-loops").textContent = n.loops; $("v-served").textContent = `${n.served}/${n.customers}`;
   chart("c-churn", S.hist.churn, css("--warn"));
   chart("c-loops", S.hist.loops, css("--loop"));
@@ -345,7 +349,7 @@ function renderTick(t) {
   if (S.pop === null) { /* keep popovers static while open */ }
 }
 
-function push(a, v) { a.push(v); if (a.length > HIST) a.shift(); }
+function push(a, ts, v) { a.push([ts, v]); while (a.length && a[0][0] < ts - WINDOW) a.shift(); }
 function chart(id, data, color, max) {
   const c = $(id), dpr = window.devicePixelRatio || 1;
   const w = c.clientWidth, h = c.clientHeight;
@@ -355,12 +359,13 @@ function chart(id, data, color, max) {
   g.clearRect(0, 0, w, h);
   g.strokeStyle = css("--line"); g.lineWidth = 1;
   g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
-  const top = max || Math.max(1, ...data);
+  const top = max || Math.max(1, ...data.map((d) => d[1]));
   if (!data.length) return;
+  const now = data[data.length - 1][0], xOf = (ts) => w - ((now - ts) / WINDOW) * w;
   g.beginPath();
-  data.forEach((v, i) => { const x = w - (data.length - 1 - i) * (w / (HIST - 1)), y = h - 3 - (v / top) * (h - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  data.forEach(([ts, v], i) => { const x = xOf(ts), y = h - 3 - (v / top) * (h - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); });
   g.strokeStyle = color; g.lineWidth = 2; g.lineJoin = "round"; g.stroke();
-  g.lineTo(w, h); g.lineTo(w - (data.length - 1) * (w / (HIST - 1)), h); g.closePath();
+  g.lineTo(w, h); g.lineTo(xOf(data[0][0]), h); g.closePath();
   g.globalAlpha = .12; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
 }
 
@@ -387,6 +392,7 @@ document.querySelectorAll("[data-stop],[data-start]").forEach((b) => b.onclick =
   post("/api/node", { name: b.dataset.stop || b.dataset.start, action: b.dataset.stop ? "stop" : "start" }));
 document.querySelectorAll("[data-scenario]").forEach((b) => b.onclick = () => post("/api/scenario", { action: b.dataset.scenario }));
 $("reset").onclick = () => post("/api/scenario", { action: "reset" });
+$("rate").onchange = () => post("/api/rate", { poll: Number($("rate").value) });
 $("theme").onclick = () => {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = dark ? "light" : "dark";
@@ -402,7 +408,7 @@ async function boot() {
     if (!r.ok) throw new Error(state.error);
     $("banner").style.display = "none";
     $("subtitle").textContent = `${state.nodes.filter((n) => n.kind === "router").length} routers speaking RIPv2 (timers ${state.timers} s) · `
-      + `${state.nodes.filter((n) => n.role === "customer").length} customers pinging server S1 (${state.server}) every 200 ms`;
+      + `${state.nodes.filter((n) => n.role === "customer").length} customers pinging server S1 (${state.server}) every 100 ms`;
     buildMap(state);
   } catch (e) {
     $("banner").textContent = "Can't load the lab: " + e.message;
