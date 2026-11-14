@@ -102,8 +102,29 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 | Z1 | **FIN_WAIT_2 never ends.** After the server closes, a peer that acknowledges the FIN but never sends its own keeps the connection forever | 16 such clients hold all TCP slots and 1 MiB of heap: the dashboard is unreachable | FIN_WAIT_2 frees the send buffer, times out after 60 s, and its slot is reused when the table is full | `TimeoutError` after 16 lingering clients |
 | Z2 | **No persist timer.** With data queued and a zero window, no timer runs | A peer that stops reading (or one lost window update) keeps the connection and 64 KiB forever; 16 such clients lock out the dashboard | Persist timer with probes, dropped after 8 unanswered; closed-but-stalled connections are reset when the table is full | `TimeoutError` after 16 stalled clients |
 
+- **libFuzzer campaign** (clang 21, coverage-guided, all six targets in parallel for 2 hours). The `wan` target crashed after 5.1 million inputs (~58 min):
+
+| # | Finding | Impact | Fix | Old kernel (QEMU) |
+|---|---|---|---|---|
+| Z3 | **UDP to port 0 called a NULL function.** Free slots in the UDP port table have port 0 and no handler, and the lookup didn't skip them | **One datagram from the internet crashes the router**: jump to address 0, page fault, kernel panic | The lookup skips free slots | `[K_PANIC] #PF page fault ... eip=0x0` |
+| Z4 | **TCP SYN to port 0 matched a free listener slot** (same pattern). It was accepted with no application and no `admit()` check, so from the WAN too, and never closed | Internet hosts could hold all 16 connection slots and 1 MiB forever (dashboard down) | Port 0 never matches; `tcp_listen(0)` refused; segments from 0.0.0.0, broadcast, multicast, loopback or our own addresses dropped (RFC 1122) | the router answers `SYN-ACK` from the WAN |
+
 - One false positive along the way (a DHCP client renewing a 25-minute lease during the drain) led to the age-based form of the leak invariant.
-- **Next:** coverage-guided fuzzing with libFuzzer once clang is installed (`sudo apt install -y clang libclang-rt-dev llvm`), hours per target, then coverage again.
+- **libFuzzer campaign totals:** 2 hours per target, 6 targets in parallel on one laptop.
+
+| Target | Inputs run | Inputs/s | Result |
+|---|---|---|---|
+| `net` | 7.05 M | 1,501 | crash Z3 (found again from the LAN side) |
+| `wan` | 5.12 M | 1,482 | crash Z3 after ~58 min |
+| `http` | 4.01 M | 435 | clean |
+| `tcp` | 3.27 M | 355 | clean |
+| `dhcp_server` | 5.48 M | 594 | clean |
+| `dhcp_client` | 2.02 M | 218 | clean |
+
+- About **27 million inputs** in total. Merging the inputs that added coverage grew the regression corpus from 209 to 3,546 inputs (5.7 MB; `make check` replays them twice each in seconds).
+- **Line coverage of the stack rose from 80.5% to 88.4%** (3,418 lines), for example TCP 82→93%, IPv4 89→98%, NAT 76→88%, auth 69→84%. What's left is mostly boot-time self-tests and the NIC polling path the harness bypasses.
+- Apart from Z3/Z4: no memory errors, no undefined behaviour and no leaks in any target.
+- **Next:** longer campaigns (overnight) on `wan` and `tcp`; a fuzz target for the management API's JSON output and the events log.
 
 ## 4. Work packages
 

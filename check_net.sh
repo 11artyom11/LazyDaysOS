@@ -715,6 +715,15 @@ t = s['tcp']
 ok = t['filtered'] >= 1000 and t['syn_cookies_sent'] >= 1000 and t['syn_cookies_accepted'] >= 3 and s['ipv4']['wrong_port'] >= 2
 print(('counted ' if ok else 'wrong: ') + 'filtered %d, cookies sent %d, accepted %d, half-open evicted %d, refused %d, wrong_port %d'
       % (t['filtered'], t['syn_cookies_sent'], t['syn_cookies_accepted'], t['syn_evicted'], t['refused'], s['ipv4']['wrong_port']))"
+
+    echo "--- port 0 (found by fuzzing: it matched the free slots of the port tables)"
+    check_output "a TCP SYN to port 0 from the WAN gets RST (was accepted with no application, held forever)" "^RST$" \
+        attack wan syn-probe $ROUTER_WAN 0
+    check_output "a UDP datagram to port 0 from the WAN" "^sent$" attack wan udp $ROUTER_WAN 0
+    check_ping "the router survives it (it called a NULL handler: remote crash)" "0%" ping -c 2 -i 0.2 -W 2 $ROUTER_LAN
+    if grep -q "K_PANIC\|panic" $LOG; then
+        fail "the kernel log shows a panic: $(grep -m1 -i panic $LOG)"
+    fi
 }
 
 # Raw packets as an attacker would send them. A leading "wan" runs it on the WAN host.
@@ -728,6 +737,10 @@ print(('counted ' if ok else 'wrong: ') + 'filtered %d, cookies sent %d, accepte
 #       TCP SYNs from random spoofed sources prefix.3-254; prints "sent <n>"
 #   attack [wan] ping-flood <dst> <seconds> <packets/s> <source prefix>
 #       ICMP echo requests from random spoofed sources prefix.3-254; prints "sent <n>"
+#   attack [wan] udp <dst> <port>
+#       one UDP datagram from this host to any port, 0 included; prints "sent"
+#   attack [wan] syn-probe <dst> <port>
+#       one SYN; prints how the router answers: "SYN-ACK", "RST" or "no reply"
 attack() {
     run=""
     if [ "$1" = wan ]; then run=wan; shift; fi
@@ -765,6 +778,36 @@ def xorshift32(x):
 
 mode, dst = sys.argv[1], sys.argv[2]
 out = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+probe.connect((dst, 9))
+own = probe.getsockname()[0]
+if mode == 'udp':
+    port = int(sys.argv[3])
+    udp = struct.pack('!HHHH', 40001, port, 8 + 5, 0) + b'hello'
+    pseudo = socket.inet_aton(own) + socket.inet_aton(dst) + struct.pack('!BBH', 0, 17, len(udp))
+    udp = udp[:6] + struct.pack('!H', csum(pseudo + udp) or 0xFFFF) + udp[8:]
+    ip = struct.pack('!BBHHHBBH4s4s', 0x45, 0, 20 + len(udp), 1, 0, 64, 17, 0, socket.inet_aton(own), socket.inet_aton(dst))
+    out.sendto(ip[:10] + struct.pack('!H', csum(ip)) + ip[12:] + udp, (dst, 0))
+    print('sent')
+    sys.exit(0)
+if mode == 'syn-probe':
+    port = int(sys.argv[3])
+    recv = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    recv.settimeout(2)
+    out.sendto(syn(own, dst, 41999, port), (dst, 0))
+    answer, deadline = 'no reply', time.time() + 2
+    while time.time() < deadline:
+        try:
+            pkt = recv.recv(2000)
+        except socket.timeout:
+            break
+        ihl = (pkt[0] & 0x0F) * 4
+        s_port, d_port, _, _, _, flags = struct.unpack('!HHIIBB', pkt[ihl:ihl + 14])
+        if pkt[12:16] == socket.inet_aton(dst) and s_port == port and d_port == 41999:
+            answer = 'SYN-ACK' if flags & 0x12 == 0x12 else 'RST' if flags & 0x04 else 'flags %#x' % flags
+            break
+    print(answer)
+    sys.exit(0)
 if mode == 'isn':
     port = int(sys.argv[3])
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

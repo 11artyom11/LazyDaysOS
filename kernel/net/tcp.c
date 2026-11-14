@@ -496,7 +496,10 @@ static uint16_t tcp$$parse_mss(const uint8_t* options, size_t len)
 
 static const struct tcp$listener* tcp$$listener(uint16_t port)
 {
-    for (int i = 0; i < TCP_MAX_LISTENERS; i++) {
+    /* Free slots have port 0: a SYN to port 0 must not match one (it was accepted with
+       no application and no admit() check, from the WAN too, and held a slot and
+       64 KiB forever; found by fuzzing) */
+    for (int i = 0; port != 0 && i < TCP_MAX_LISTENERS; i++) {
         if (tcp$listeners[i].port == port) {
             return &tcp$listeners[i];
         }
@@ -683,6 +686,12 @@ void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
     uint32_t local_ip = net_ntohl(ip->dst);
 
     if (seg_len < TCP$HEADER_LEN || local_ip == NET_IP_BROADCAST || !ipv4_is_own_address(local_ip)) {
+        tcp_stats.rx_invalid++;
+        return;
+    }
+    /* No connection can come from these (RFC 1122 4.2.3.10, 3.2.1.3) */
+    if (remote_ip == 0 || remote_ip >= NET_IP(224, 0, 0, 0) || (remote_ip >> 24) == 127 ||
+        ipv4_is_own_address(remote_ip)) {
         tcp_stats.rx_invalid++;
         return;
     }
@@ -978,6 +987,9 @@ void tcp_tick(uint32_t now_ms)
 
 bool tcp_listen(uint16_t port, const struct tcp_callbacks* callbacks)
 {
+    if (port == 0) {
+        return false;                   /* 0 marks a free slot */
+    }
     for (int i = 0; i < TCP_MAX_LISTENERS; i++) {
         if (tcp$listeners[i].port == port) {
             return false;

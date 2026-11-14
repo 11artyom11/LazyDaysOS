@@ -63,7 +63,9 @@ void udp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
 
     uint16_t port = net_ntohs(udp->dst_port);
     for (int i = 0; i < UDP_MAX_BINDINGS; i++) {
-        if (udp$bindings[i].port == port) {
+        /* Free slots have port 0: a datagram to port 0 must not match one (it used to
+           call the free slot's NULL handler, a remote crash; found by fuzzing) */
+        if (udp$bindings[i].handler && udp$bindings[i].port == port) {
             udp$bindings[i].handler(dev, src, net_ntohs(udp->src_port), dst, port,
                                     (const uint8_t*)udp + UDP_HEADER_LEN, segment_len - UDP_HEADER_LEN);
             return;
