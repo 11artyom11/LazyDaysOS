@@ -117,7 +117,13 @@ The network stack (`kernel/net/*.c`, `kernel/random.c`, `kernel/cmdline.c`, `lib
   - Topology: 4 core routers in a full mesh, 8 aggregation routers dual-homed to the core, 16 access routers dual-homed to aggregation, one customer each. 28 routers, 54 links, servers S1/S2 on C1/C3, a NOC host on C2.
   - Configuration: RIP timers 5,30,20, 32 MB per router. `metro.py` is the single definition (addresses, ports, layout) that both the builder and the dashboard import.
   - `python3 gns3/metro_lab.py build|start|delete`: the routers boot `LazyDaysOS-metro.bin`, a copy. The project is created with **`auto_close: false`**: otherwise GNS3 closes a project, stopping every node, as soon as the last GUI client disconnects.
-  - `python3 gns3/net_ui.py` → http://localhost:8095. The page updates 10×/s. Inputs:
+  - `python3 gns3/net_ui.py` → http://localhost:8095. The page updates 10×/s. The page (`gns3/net_ui.html`, re-read on every request):
+    - a header of vital signs (service, routing, loops, hijack);
+    - a zoomable map: wheel or double-click to zoom, drag to pan, `+`/`−`/`F`, per-metro buttons. Labels appear once readable, and nodes keep a minimum size on screen;
+    - a "Break" toolbar: pick a link or router on the map, or click one for the inspector with its own actions;
+    - a side column: status, the current experiment as a time track, a two-minute timeline (one row per customer, then route changes and looping packets on the same time axis, experiment markers through all three), results and the log.
+
+    Colour carries meaning only: status colours for states, one blue ramp for link load, violet for the hijack. Inputs:
     - a Python poller inside the NOC container reads every router's `/api/stats` in-band, about 16 KB per read. Each router has its own loop, staggered over the interval (selectable on the page: 0.25–2 s, default 0.5), so a dead router only delays itself. A router counts as down after two failed reads. All-at-once reads overflow the NOC router's transmit ring;
     - each customer runs `ping -D -O -i 0.1` to S1 (loss, hops from the TTL, ICMP "time to live exceeded" = looping).
   - **Experiments:** every action is an experiment that lives until its consequences are complete: applied → first effect (what and when) → settled. Settled means:
