@@ -652,6 +652,38 @@ threads = [threading.Thread(target=get) for _ in range(30)]
 for t in threads: t.start()
 for t in threads: t.join()
 print('30 x 200' if codes.count(200) == 30 else codes)"
+    # Found by fuzzing: a client that never closes its side kept a slot (and 64 KiB) forever
+    check_output "16 clients that never close can't lock others out (FIN_WAIT_2)" "^200 after 16 lingering$" python3 -c "
+import socket, urllib.request
+held = []
+for i in range(16):
+    s = socket.create_connection(('$ROUTER_LAN', 80), timeout=5)
+    s.sendall(b'GET /nope HTTP/1.1\r\nHost: $ROUTER_LAN\r\n\r\n')
+    while s.recv(4096):
+        pass                            # 404, then the router closes; this side never does
+    held.append(s)
+try:
+    code = urllib.request.urlopen(urllib.request.Request('$API/api/stats', headers={'Authorization': '$API_AUTH'}), timeout=10).status
+except Exception as e:
+    code = repr(e)
+print('%s after %d lingering' % (code, len(held)))"
+    # Found by fuzzing: a client that stops reading (zero window) kept a slot forever
+    check_output "16 clients that never read can't lock others out (zero window)" "^200 after 16 stalled$" python3 -c "
+import socket, time, urllib.request
+held = []
+for i in range(16):
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
+    s.settimeout(5)
+    s.connect(('$ROUTER_LAN', 80))
+    s.sendall(b'GET / HTTP/1.1\r\nHost: $ROUTER_LAN\r\n\r\n')
+    held.append(s)                      # the dashboard doesn't fit the tiny window; this side never reads
+time.sleep(1)
+try:
+    code = urllib.request.urlopen(urllib.request.Request('$API/api/stats', headers={'Authorization': '$API_AUTH'}), timeout=10).status
+except Exception as e:
+    code = repr(e)
+print('%s after %d stalled' % (code, len(held)))"
 
     echo "--- floods with spoofed sources"
     # From the WAN: must not take a single connection slot

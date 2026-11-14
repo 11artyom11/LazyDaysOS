@@ -7,3 +7,6 @@ sysroot
 qemu_*.log
 qemu_*.pcap
 __pycache__
+fuzz/build
+fuzz/findings
+mutate-current*

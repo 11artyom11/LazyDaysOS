@@ -156,3 +156,8 @@ check: $(KERN_NAME).bin
 	$(info )
 
 	sh check_net.sh $(KERN_NAME).bin
+	$(info )
+	@echo "$(COLOUR_GREEN)> Replaying the fuzz corpus (host build, ASan + UBSan) $(COLOUR_END)"
+	$(info )
+
+	$(MAKE) -C fuzz check

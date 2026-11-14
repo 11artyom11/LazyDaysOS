@@ -88,6 +88,23 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 - **Tests:** `make check` passes (TCG + KVM self-tests, 113 network checks). All 19 new login checks fail on the `master` kernel.
 - **Open:** passwords are compared in plain text in RAM. A proper password hash (needs SHA-256) comes with flash storage in WP5/WP6.
 
+### Status of WP2 (2026-11-14, branch `fuzzing`)
+
+- **Harness** (`fuzz/`): the network stack compiled unchanged for Linux with AddressSanitizer and UndefinedBehaviorSanitizer.
+  - Six targets: `net` (raw frames, both ports), `wan` (raw frames, WAN port only), `http`, `tcp`, `dhcp_server`, `dhcp_client`.
+  - Every input starts from the same post-boot state: the stack's globals are moved into their own sections, snapshotted, and restored after each input.
+  - **Leak invariant:** after 20 simulated idle minutes, no heap block older than 10 minutes may remain.
+  - The corpus replay is part of `make check`. The seeds cover **80.5%** of the stack's 3,413 lines (HTTP 94%, DHCP client 95%, IPv4 89%, TCP 82%, NAT 76%).
+- **First campaign:** gcc random mutation without coverage feedback, ~1.9 million inputs (6 targets × 6 seeds × 50,000, plus reruns). No memory errors and no undefined behaviour. Two real bugs, both found by the leak invariant:
+
+| # | Finding | Impact | Fix | Old kernel |
+|---|---|---|---|---|
+| Z1 | **FIN_WAIT_2 never ends.** After the server closes, a peer that acknowledges the FIN but never sends its own keeps the connection forever | 16 such clients hold all TCP slots and 1 MiB of heap: the dashboard is unreachable | FIN_WAIT_2 frees the send buffer, times out after 60 s, and its slot is reused when the table is full | `TimeoutError` after 16 lingering clients |
+| Z2 | **No persist timer.** With data queued and a zero window, no timer runs | A peer that stops reading (or one lost window update) keeps the connection and 64 KiB forever; 16 such clients lock out the dashboard | Persist timer with probes, dropped after 8 unanswered; closed-but-stalled connections are reset when the table is full | `TimeoutError` after 16 stalled clients |
+
+- One false positive along the way (a DHCP client renewing a 25-minute lease during the drain) led to the age-based form of the leak invariant.
+- **Next:** coverage-guided fuzzing with libFuzzer once clang is installed (`sudo apt install -y clang libclang-rt-dev llvm`), hours per target, then coverage again.
+
 ## 4. Work packages
 
 ### WP0: attack-surface inventory and comparison baseline (1 week)

@@ -28,6 +28,14 @@
       ignored, which makes the peer fall back to plain RFC 793 behaviour
     - TIME_WAIT is shortened to TCP_TIMEWAIT_MS, and the oldest TIME_WAIT slot is
       reused when the table is full
+    - FIN_WAIT_2 (we closed, the peer acknowledged but hasn't closed) frees the send
+      buffer at once and lasts at most TCP_FIN_WAIT_2_MS; when the table is full
+      these slots are reused like TIME_WAIT ones. Otherwise a peer that never
+      closes keeps a slot and 64 KiB forever (found by fuzzing).
+    - a zero window starts the persist timer: 1-byte probes with backoff, dropped
+      after TCP_MAX_RETRIES unanswered ones. With the table full, a connection the
+      application has closed that is stuck behind a zero window is reset to make
+      room (found by fuzzing: before, nothing ever timed it out).
 
     Hardening against off-path and flooding attackers:
     - every initial sequence number is a SYN cookie: keyed ChaCha20 hashes of the
@@ -55,6 +63,7 @@
 #define TCP_RTO_MAX_MS      60000
 #define TCP_MAX_RETRIES     8           /* then the connection is aborted */
 #define TCP_TIMEWAIT_MS     2000
+#define TCP_FIN_WAIT_2_MS   60000       /* like Linux's tcp_fin_timeout: then the connection is dropped */
 #define TCP_OOO_SEGMENTS    8           /* out-of-order segments kept per connection */
 
 struct tcp_conn;
@@ -118,6 +127,8 @@ struct tcp_stats
     uint32_t syn_cookies_sent;          /* SYN-ACKs sent without keeping state (table full) */
     uint32_t syn_cookies_accepted;      /* connections recreated from a cookie */
     uint32_t syn_evicted;               /* half-open connections replaced by a cookie-validated one */
+    uint32_t fin_wait_dropped;          /* FIN_WAIT_2 connections timed out or reused: the peer never closed */
+    uint32_t stalled_dropped;           /* closed by the application, stuck behind a zero window, reset for a new one */
 };
 
 extern struct tcp_stats tcp_stats;

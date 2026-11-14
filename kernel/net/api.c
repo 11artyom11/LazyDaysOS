@@ -186,6 +186,8 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "syn_cookies_sent", tcp_stats.syn_cookies_sent, false);
     api$$key_uint(&sb, "syn_cookies_accepted", tcp_stats.syn_cookies_accepted, false);
     api$$key_uint(&sb, "syn_evicted", tcp_stats.syn_evicted, false);
+    api$$key_uint(&sb, "fin_wait_dropped", tcp_stats.fin_wait_dropped, false);
+    api$$key_uint(&sb, "stalled_dropped", tcp_stats.stalled_dropped, false);
     sb_char(&sb, '}');
 
     sb_json_key(&sb, "http", false);

@@ -223,6 +223,13 @@ static void tcp$$output(struct tcp_conn* c, bool probe)
                 n = window_left;
             }
             if (n == 0) {
+                /* Data waits for a zero window: the persist timer (RFC 9293 3.8.6.1) must
+                   run, or a lost window update, or a peer that never reads, leaves the
+                   connection stuck forever. It probes with backoff and gives up after
+                   TCP_MAX_RETRIES unanswered probes (found by fuzzing). */
+                if (offset == 0 && !c->rtx_armed) {
+                    tcp$$arm(c, now);
+                }
                 break;
             }
             uint8_t flags = TCP_ACK | (offset + n == c->buf_used ? TCP_PSH : 0);
@@ -346,30 +353,52 @@ static struct tcp_conn* tcp$$find(uint32_t local_ip, uint16_t local_port, uint32
     return NULL;
 }
 
-/* A free slot, else the TIME_WAIT connection closest to expiry, else (only when
+/* Closed by the application but stuck behind the peer's zero window: only the peer
+   can end it, and a peer that never reads won't */
+static bool tcp$$stalled_orphan(const struct tcp_conn* c)
+{
+    return c->close_requested && c->snd_wnd == 0 && c->buf_used > 0 &&
+           (c->state == TCP$ESTABLISHED || c->state == TCP$CLOSE_WAIT);
+}
+
+/* A free slot, else the TIME_WAIT or FIN_WAIT_2 connection closest to expiry (both
+   are done for the application), else a stalled orphan (reset), else (only when
    allow_half_open) the oldest half-open connection. Evicting a half-open
    connection loses nothing: its sequence numbers are SYN cookies, so its peer's
    ACK recreates it. */
 static struct tcp_conn* tcp$$allocate(bool allow_half_open)
 {
     struct tcp_conn* waiting = NULL;
+    struct tcp_conn* stalled = NULL;
     struct tcp_conn* half_open = NULL;
     for (int i = 0; i < TCP_MAX_CONNS; i++) {
         struct tcp_conn* c = &tcp$conns[i];
         if (c->state == TCP$CLOSED) {
             return c;
         }
-        if (c->state == TCP$TIME_WAIT &&
+        if ((c->state == TCP$TIME_WAIT || c->state == TCP$FIN_WAIT_2) &&
             (!waiting || SEQ_LT(c->timewait_deadline_ms, waiting->timewait_deadline_ms))) {
             waiting = c;
         }
         if (c->state == TCP$SYN_RCVD && (!half_open || SEQ_LT(c->created_ms, half_open->created_ms))) {
             half_open = c;
         }
+        if (tcp$$stalled_orphan(c) && (!stalled || SEQ_LT(c->created_ms, stalled->created_ms))) {
+            stalled = c;
+        }
     }
     if (waiting) {
+        if (waiting->state == TCP$FIN_WAIT_2) {
+            tcp_stats.fin_wait_dropped++;
+        }
         tcp$$release(waiting, false);
         return waiting;
+    }
+    if (stalled) {
+        tcp_stats.stalled_dropped++;
+        tcp$$segment(stalled, TCP_RST | TCP_ACK, stalled->snd_nxt, 0, 0, false);
+        tcp$$release(stalled, true);
+        return stalled;
     }
     if (half_open && allow_half_open) {
         tcp_stats.syn_evicted++;
@@ -795,7 +824,12 @@ void tcp_receive(struct netdev* dev, const uint8_t* packet, size_t len, size_t h
 
             if (c->fin_sent && SEQ_GT(ack, c->fin_seq)) {
                 if (c->state == TCP$FIN_WAIT_1) {
+                    /* Everything we sent is acknowledged: only the peer's FIN is missing */
                     c->state = TCP$FIN_WAIT_2;
+                    c->timewait_deadline_ms = now + TCP_FIN_WAIT_2_MS;
+                    kfree(c->buf);
+                    c->buf = NULL;
+                    c->buf_used = 0;
                 } else if (c->state == TCP$CLOSING) {
                     tcp$$enter_time_wait(c, now);
                     return;
@@ -904,8 +938,11 @@ void tcp_tick(uint32_t now_ms)
         if (c->state == TCP$CLOSED) {
             continue;
         }
-        if (c->state == TCP$TIME_WAIT) {
+        if (c->state == TCP$TIME_WAIT || c->state == TCP$FIN_WAIT_2) {
             if (tcp$$reached(now_ms, c->timewait_deadline_ms)) {
+                if (c->state == TCP$FIN_WAIT_2) {
+                    tcp_stats.fin_wait_dropped++;
+                }
                 tcp$$release(c, false);
             }
             continue;
