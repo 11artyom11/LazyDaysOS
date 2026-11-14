@@ -1,0 +1,343 @@
+{
+ "version": 1,
+ "created": "2026-11-10T23:44:36",
+ "label": "+ doorbell batching",
+ "path": "Routed",
+ "row": "1",
+ "router": "R-routed",
+ "cmdline": "eth0=10.1.1.1/24 eth1=10.1.2.1/24 http",
+ "settings": {
+  "sizes": [
+   64,
+   128,
+   256,
+   512,
+   1024,
+   1280,
+   1518
+  ],
+  "trial_s": 3,
+  "loss_pct": 0.1,
+  "max_pps": 50000,
+  "precision": 0.02
+ },
+ "results": [
+  {
+   "frame": 64,
+   "payload": 18,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 31.1,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49996,
+     "delivered_pps": 49996,
+     "loss_pct": 0,
+     "cpu_pct": 33.6,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.312,
+      "avg_ms": 0.699,
+      "max_ms": 2.533
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49996,
+   "throughput_mbps": 25.6,
+   "loss_pct": 0,
+   "cpu_pct": 33.6,
+   "rtt": {
+    "min_ms": 0.312,
+    "avg_ms": 0.699,
+    "max_ms": 2.533
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 128,
+   "payload": 82,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 33.9,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 29.4,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.349,
+      "avg_ms": 0.702,
+      "max_ms": 1.785
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49998,
+   "throughput_mbps": 51.2,
+   "loss_pct": 0,
+   "cpu_pct": 29.4,
+   "rtt": {
+    "min_ms": 0.349,
+    "avg_ms": 0.702,
+    "max_ms": 1.785
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 256,
+   "payload": 210,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 29.5,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 36.2,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.319,
+      "avg_ms": 0.706,
+      "max_ms": 2.767
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49998,
+   "throughput_mbps": 102.4,
+   "loss_pct": 0,
+   "cpu_pct": 36.2,
+   "rtt": {
+    "min_ms": 0.319,
+    "avg_ms": 0.706,
+    "max_ms": 2.767
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 512,
+   "payload": 466,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 37.6,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49999,
+     "delivered_pps": 49999,
+     "loss_pct": 0,
+     "cpu_pct": 32.2,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.352,
+      "avg_ms": 0.709,
+      "max_ms": 1.992
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49999,
+   "throughput_mbps": 204.8,
+   "loss_pct": 0,
+   "cpu_pct": 32.2,
+   "rtt": {
+    "min_ms": 0.352,
+    "avg_ms": 0.709,
+    "max_ms": 1.992
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 1024,
+   "payload": 978,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49995,
+     "loss_pct": 0.005,
+     "cpu_pct": 36.7,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 49997,
+     "loss_pct": 0,
+     "cpu_pct": 41.5,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.369,
+      "avg_ms": 0.772,
+      "max_ms": 2.431
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49997,
+   "throughput_mbps": 409.6,
+   "loss_pct": 0,
+   "cpu_pct": 41.5,
+   "rtt": {
+    "min_ms": 0.369,
+    "avg_ms": 0.772,
+    "max_ms": 2.431
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 1280,
+   "payload": 1234,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49997,
+     "delivered_pps": 49997,
+     "loss_pct": 0,
+     "cpu_pct": 40.8,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49998,
+     "loss_pct": 0,
+     "cpu_pct": 31.1,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.325,
+      "avg_ms": 0.752,
+      "max_ms": 2.22
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49998,
+   "throughput_mbps": 512.0,
+   "loss_pct": 0,
+   "cpu_pct": 31.1,
+   "rtt": {
+    "min_ms": 0.325,
+    "avg_ms": 0.752,
+    "max_ms": 2.22
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  },
+  {
+   "frame": 1518,
+   "payload": 1472,
+   "trials": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49981,
+     "loss_pct": 0.034,
+     "cpu_pct": 31.8,
+     "sender_limited": false,
+     "pass": true
+    }
+   ],
+   "confirms": [
+    {
+     "target_pps": 50000,
+     "sent_pps": 49998,
+     "delivered_pps": 49994,
+     "loss_pct": 0.007,
+     "cpu_pct": 38.8,
+     "sender_limited": false,
+     "pass": true,
+     "rtt": {
+      "min_ms": 0.34,
+      "avg_ms": 0.807,
+      "max_ms": 3.868
+     }
+    }
+   ],
+   "throughput_pps": 50000,
+   "delivered_pps": 49994,
+   "throughput_mbps": 607.2,
+   "loss_pct": 0.007,
+   "cpu_pct": 38.8,
+   "rtt": {
+    "min_ms": 0.34,
+    "avg_ms": 0.807,
+    "max_ms": 3.868
+   },
+   "sender_limited": false,
+   "limited_by_max": true
+  }
+ ],
+ "kernel": {
+  "git_commit": "375f684",
+  "git_dirty": false,
+  "kernel_image": "LazyDaysOS-375f684.bin",
+  "optimization": "-O2",
+  "kernel_sha256": "375ba5ead87f37a2",
+  "kernel_installed": 1794337215.9700356,
+  "router_booted": 1794339868.553429,
+  "router_older_than_install": false
+ },
+ "idle_rtt": {
+  "min_ms": 0.448,
+  "avg_ms": 2.092,
+  "max_ms": 45.241
+ },
+ "duration_s": 57
+}

@@ -2,6 +2,8 @@
 
 **LazyDaysOS** (also referred to as *DudeOS*) is a hobbyist operating system built from scratch using C and Assembly. It serves as an educational project to explore OS development fundamentals, including kernel design, low-level memory management, and bootloader integration.
 
+Full setup (toolchain, test dependencies, GNS3 labs), project state and next steps: [docs/HANDOVER.md](docs/HANDOVER.md). Technical reference: [CLAUDE.md](CLAUDE.md).
+
 ## Features
 
 - Custom kernel written in C and Assembly

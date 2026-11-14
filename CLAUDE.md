@@ -2,6 +2,8 @@
 
 Guidance for Claude Code when working in this repository.
 
+New to the project or to this machine? Read [`docs/HANDOVER.md`](docs/HANDOVER.md) first: machine setup with every third-party dependency, the GNS3 installation, the state of the work, gotchas and open items.
+
 ## What this is
 
 LazyDaysOS (a.k.a. DudeOS) is a hobby 32-bit x86 kernel in C and GNU `as` (AT&T syntax), booted by GRUB via **Multiboot v1**. It sets up a GDT, remaps the 8259 PICs, installs an IDT, builds a physical frame allocator from the Multiboot memory map, enables paging, creates a kernel heap (`kmalloc`/`kfree`), runs a 100 Hz PIT timer, scans PCI, drives Intel e1000 NICs behind a generic `netdev` layer, runs an IPv4 stack that **forwards between ports** (Ethernet, ARP, IPv4 with a static routing table, ICMP echo and errors, UDP, DHCP client and server, NAT with connection tracking and an inbound firewall, a TCP server endpoint, an HTTP management API with per-device accounting and blocking, and a web dashboard) configured from the kernel command line, runs boot-time self-tests, and echoes keyboard input to the VGA text console. Kernel messages are mirrored to COM1. There is no userspace or scheduler yet.
@@ -168,7 +170,7 @@ The thesis test bench: LazyDaysOS in GNS3 between Docker hosts, measured live. S
 
 ## Build layout (Makefile)
 
-- `CC=i686-elf-gcc -m32`, `CFLAGS=-nostdlib -ffreestanding -D __LF -Ilibk/include -Ikernel/compat/i386/include -g -O0`. Link: `-T kernel/compat/i386/linker.ld ... -lgcc`.
+- `CC=i686-elf-gcc -m32`, `CFLAGS=-nostdlib -ffreestanding -D __LF -Ilibk/include -Ikernel/compat/i386/include -g -O2`. Link: `-T kernel/compat/i386/linker.ld ... -lgcc`.
 - Three object groups: `KERN_OBJ` (kernel + compat), `LIBK_OBJS` → `libk.a` (tty, kio, ttyin, serial), `UTIL_OBJS` → `util.a` (memory).
 - **Adding a source file:** append its `.o` to the right group and its directory to `VPATH`. Compat files are referenced with a path prefix (`$(COMPAT_DIR)/foo.o`), so their objects stay next to the source.
 - Generic network code lives in `kernel/net/` (`NET_DIR`); like compat files, its objects are listed with a path prefix.
@@ -184,7 +186,7 @@ kernel/idt.c/.h            PIC remap (IRQ0-15 -> vectors 0x20-0x2F), IDT gates 0
 kernel/idt_hndlr_setup.s   ISR0-31 / IRQ0-15 stubs -> general_interrupt_handler -> interrupt_handler(struct int_frame*)
 kernel/isr.c/.h            EOI, dispatch through isr_map[], panic on unhandled CPU exceptions, isr_self_test
 kernel/panic.c/.h          k_panic / k_panic_frame: red register dump (+CR2 on #PF), then halt
-kernel/heap.c/.h           kmalloc/kfree: first-fit heap over 4 MiB of contiguous frames
+kernel/heap.c/.h           kmalloc/kfree: first-fit heap over 16 MiB of contiguous frames
 kernel/cpuload.h           generic CPU-load API: cpu_idle_wait, cpu_irq_disable/enable, busy share per second
 kernel/net/netdev.c/.h     driver-independent NIC interface: register, transmit, poll, rx handler, stats
 kernel/net/net.c/.h        stack entry (net_initialize, net_run_once), byte order, checksum, IP parsing/printing
@@ -218,7 +220,7 @@ kernel/compat/i386/        arch-specific:
   cpuload.c                  cpuload.h for x86: TSC around sti; hlt, one-second windows, self test
   entropy.c                  random.h seed hooks for x86: RDRAND if present, TSC jitter around PIT port I/O
   pci.c                      PCI config mechanism #1, bus scan, BAR decode, pci_enable_device
-  e1000.c                    Intel 82540EM/82545EM driver: 32-entry RX/TX DMA rings, shared IRQ handler, MPC -> rx_missed
+  e1000.c                    Intel 82540EM/82545EM driver: 256-entry RX / 32-entry TX DMA rings, shared IRQ handler, MPC -> rx_missed
   include/multiboot.h        Multiboot v1 info / mmap structures
 libk/tty/tty.c             VGA text console 80x25 at 0xB8000 (terminal_*)
 libk/tty/serial.c          polled COM1 output, 115200 8N1
@@ -237,7 +239,7 @@ Boot sequence:
 
 Network receive path: the e1000 IRQ handler only reads ICR (which acknowledges the interrupt) and calls `netdev_mark_pending()`. Frames are processed later in `netdev_run_once()` → driver `poll()` → `netdev_receive()` → the single registered `netdev_rx_handler`, i.e. **not in interrupt context**. The registered handler is `eth_receive` → `arp_receive` / `ipv4_receive` → `icmp_receive` / `udp_receive` (→ the handler bound to the port, else ICMP port unreachable). Packets not addressed to us go to `ipv4$$forward`: drop martians (0/8, 127/8, ≥224) and directed broadcasts, TTL ≤ 1 → ICMP time exceeded, no route → net unreachable, else copy, decrement TTL, recompute the header checksum, `arp_output` to the next hop. If ARP gives up on a next hop, the held packet's sender gets ICMP host unreachable.
 
-NAT hooks (`kernel/net/nat.c`): a packet arriving on an outside port and addressed to that port's own address is first offered to `nat_inbound` (on a copy); if it matches a tracked connection it is rewritten toward the inside host and forwarded with `translated = true`, otherwise it is delivered locally (DHCP, pings to the router). Outside ports follow the strong host model: a packet arriving there for one of the router's *other* addresses (the LAN address) is dropped (`ipv4_stats.rx_wrong_port`), so a WAN neighbour can't reach inside-only services by addressing them directly. In `ipv4$$forward`, anything from an outside port that isn't `translated` is dropped (`nat_stats.fw_dropped`), and anything leaving through an outside port goes through `nat_outbound` before the TTL decrement. Mappings are endpoint-independent with port preservation (RFC 4787); inbound filtering is address-and-port-dependent. Checksums are patched incrementally (`net_checksum_replace16/32`, RFC 1624) because the TCP payload isn't re-summed. Changing an outside port's address (`ipv4_clear_address`) flushes its mappings. Sending goes `icmp`/caller → `ipv4_send` (route lookup, header, checksum) → `arp_output` (resolve or hold) → `eth_send` → `netdev_transmit`. Every layer copies into its own stack buffer (up to ~4.5 KiB of stack per send). Transmit copies the frame into a per-descriptor buffer, so callers may reuse their buffer immediately.
+NAT hooks (`kernel/net/nat.c`): a packet arriving on an outside port and addressed to that port's own address is first offered to `nat_inbound` (on a copy); if it matches a tracked connection it is rewritten toward the inside host and forwarded with `translated = true`, otherwise it is delivered locally (DHCP, pings to the router). Outside ports follow the strong host model: a packet arriving there for one of the router's *other* addresses (the LAN address) is dropped (`ipv4_stats.rx_wrong_port`), so a WAN neighbour can't reach inside-only services by addressing them directly. In `ipv4$$forward`, anything from an outside port that isn't `translated` is dropped (`nat_stats.fw_dropped`), and anything leaving through an outside port goes through `nat_outbound` before the TTL decrement. Mappings are endpoint-independent with port preservation (RFC 4787); inbound filtering is address-and-port-dependent. Checksums are patched incrementally (`net_checksum_replace16/32`, RFC 1624) because the TCP payload isn't re-summed. Changing an outside port's address (`ipv4_clear_address`) flushes its mappings. Sending goes `icmp`/caller → `ipv4_send` (route lookup, header, checksum) → `arp_output` (resolve or hold) → `eth_send` → `netdev_transmit`. Every layer copies into its own stack buffer (up to ~4.5 KiB of stack per send). Transmit copies the frame into a per-descriptor buffer, so callers may reuse their buffer immediately. Transmits are **batched**: the e1000 rings its doorbell (TDT) once per batch, not per frame, and returns received descriptors with one RDT write per poll round, because every device-register write is a VM exit under KVM. `netdev_run_once()` calls `netdev_flush_all()` first, so frames queued by the previous poll round or by protocol timers go out before the loop polls again or sleeps; a driver flushes on its own at 16 queued frames. Code that transmits and then waits must keep running `net_run_once()` (all existing waits do).
 
 Memory layout (identity mapped, virtual = physical): page 0 is **not present** (NULL dereferences panic with `#PF`, `cr2=0x0`); 4 KiB–4 MiB uses 4 KiB pages; 4 MiB–4 GiB uses 4 MiB PSE pages, uncached above the end of RAM. Frames below 1 MiB, the kernel image and the Multiboot structures are reserved. With QEMU's default 128 MiB, the heap lands right after the kernel image.
 
