@@ -1,0 +1,23 @@
+file                         executable  from WAN  from anywhere   (lines run only because of input)
+kernel/net/dhcp_client.c            206       135            141
+kernel/net/ipv4.c                   267       120            188
+kernel/net/tcp.c                    607        94            549
+kernel/net/arp.c                    168        63             64
+kernel/net/icmp.c                    81        57             57
+kernel/net/nat.c                    258        55            205
+kernel/net/dhcp.c                    64        39             64
+kernel/net/udp.c                     78        36             55
+libk/util/strbuf.c                   70        32             58
+kernel/net/net.c                    215        25             34
+kernel/net/events.c                  36        14             20
+kernel/net/dhcp_server.c            210         9            173
+kernel/net/eth.c                     38         8              8
+kernel/net/http.c                   314         3            289
+kernel/net/netdev.c                  75         2              2
+kernel/net/auth.c                   302         0            243
+kernel/net/api.c                    195         0            179
+kernel/net/clients.c                110         0            105
+kernel/random.c                     115         0             18
+kernel/cmdline.c                     45         0              0
+total                              3454       692           2452
+WAN = targets wan, dhcp_client; anywhere = all 6 targets; each minus an empty input with the same configuration
