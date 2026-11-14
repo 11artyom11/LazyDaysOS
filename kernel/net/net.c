@@ -10,6 +10,7 @@
 #include "tcp.h"
 #include "http.h"
 #include "api.h"
+#include "rip.h"
 #include "../cpuload.h"
 #include "../random.h"
 #include "../cmdline.h"
@@ -257,6 +258,9 @@ void net_initialize(void)
         }
     }
 
+    /* rip / rip=ethN,...: after addresses and nat= (RIP never runs on outside ports) */
+    rip_start();
+
     if (cmdline_has("tcp_test")) {
         tcp_enable_test_services();
         k_print("[K_INFO] TCP test services: echo on port 7, 1 MiB chargen on port 19\n");
@@ -287,6 +291,7 @@ void net_run_once(void)
         dhcp_server_tick(now);
         nat_tick(now);
         tcp_tick(now);
+        rip_tick(now);
         cpu_load_tick(now);
         random_tick(now);
         http_tick(now);

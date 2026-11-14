@@ -183,6 +183,33 @@ def dhcp_seeds():
     write("dhcp_client", "wrong-xid", record(2, offer) + record(0, ack))
 
 
+# ---- rip --------------------------------------------------------------------------
+
+def rip_seeds():
+    def entry(net, mask, metric, next_hop="0.0.0.0", afi=2):
+        return struct.pack("!HH4s4s4sI", afi, 0, ip(net), ip(mask), ip(next_hop), metric)
+
+    def msg(command, *entries):
+        return struct.pack("!BBH", command, 2, 0) + b"".join(entries)
+
+    learn = msg(2, entry("192.168.70.0", "255.255.255.0", 1), entry("192.168.71.0", "255.255.255.0", 3),
+                entry("0.0.0.0", "0.0.0.0", 2), entry("172.16.0.0", "255.240.0.0", 15))
+    worse = msg(2, entry("192.168.70.0", "255.255.255.0", 5))
+    withdraw = msg(2, entry("192.168.70.0", "255.255.255.0", 16), entry("192.168.71.0", "255.255.255.0", 16))
+    full_table = msg(1, struct.pack("!HH4s4s4sI", 0, 0, bytes(4), bytes(4), bytes(4), 16))
+    specific = msg(1, entry("192.168.70.0", "255.255.255.0", 0), entry("10.0.8.0", "255.255.255.0", 0))
+    bad = msg(2, entry("127.0.0.0", "255.0.0.0", 1), entry("10.1.2.3", "255.255.255.0", 1),
+              entry("10.2.0.0", "255.0.255.0", 1), entry("10.3.0.0", "255.255.0.0", 0),
+              entry("10.4.0.0", "255.255.0.0", 1, afi=0xFFFF))
+    next_hop = msg(2, entry("192.168.72.0", "255.255.255.0", 1, next_hop="10.0.9.3"))
+    write("rip", "learn-then-timeout", record(0, learn) + record(7 << 5, b"") + record(7 << 5, b""))
+    write("rip", "better-worse-withdraw", record(0, learn) + record(1 << 2, worse) + record(0, worse) + record(0, withdraw))
+    write("rip", "requests", record(0, full_table) + record(1, specific) + record(0, learn) + record(0, full_table))
+    write("rip", "invalid-entries", record(0, bad) + record(2, learn) + record(3 << 2, learn))
+    write("rip", "link-flap", record(0, learn) + record(0x10, b"") + record(0x10 | (2 << 5), learn) + record(1, next_hop))
+    write("rip", "both-ports", record(0, learn) + record(1, learn) + record(1 | (1 << 2), withdraw))
+
+
 if __name__ == "__main__":
     # Regenerate the seeds; keep inputs the fuzzer found (found-*): they are regression tests
     for target in os.listdir(CORPUS) if os.path.isdir(CORPUS) else []:
@@ -193,5 +220,6 @@ if __name__ == "__main__":
     http_seeds()
     tcp_seeds()
     dhcp_seeds()
+    rip_seeds()
     for t in sorted(os.listdir(CORPUS)):
         print(f"{t}: {len(os.listdir(os.path.join(CORPUS, t)))} seeds")

@@ -25,6 +25,8 @@ struct ipv4$route
     uint8_t prefix_len;
     uint32_t gateway;                   /* 0 = directly connected */
     struct netdev* dev;
+    uint8_t origin;                     /* IPV4_ORIGIN_* */
+    uint8_t metric;                     /* hops, for routes from a routing protocol */
 };
 
 static struct ipv4$iface ipv4$ifaces[NETDEV_MAX];
@@ -74,6 +76,21 @@ bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop)
 
 bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, struct netdev* dev)
 {
+    return ipv4_add_route_from(network, prefix_len, gateway, dev,
+                               gateway ? IPV4_ORIGIN_STATIC : IPV4_ORIGIN_CONNECTED, 0);
+}
+
+bool ipv4_mask_valid(uint32_t mask)
+{
+    return ((~mask + 1) & ~mask) == 0;   /* ~mask is 0...01...1 */
+}
+
+bool ipv4_add_route_from(uint32_t network, uint8_t prefix_len, uint32_t gateway, struct netdev* dev,
+                         uint8_t origin, uint8_t metric)
+{
+    if (prefix_len > 32) {
+        return false;
+    }
     if (dev == NULL) {
         uint32_t unused;
         if (!ipv4_route_lookup(gateway, &dev, &unused)) {
@@ -86,6 +103,9 @@ bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, stru
     for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
         struct ipv4$route* r = &ipv4$routes[i];
         if (r->used && r->network == (network & mask) && r->prefix_len == prefix_len) {
+            if (r->origin < origin) {
+                return false;           /* connected beats static beats RIP */
+            }
             slot = r;                   /* replace the existing route to this prefix */
             break;
         }
@@ -96,6 +116,8 @@ bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, stru
     if (!slot) {
         return false;
     }
+    slot->origin = origin;
+    slot->metric = metric;
     slot->used = true;
     slot->network = network & mask;
     slot->mask = mask;
@@ -103,6 +125,19 @@ bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, stru
     slot->gateway = gateway;
     slot->dev = dev;
     return true;
+}
+
+bool ipv4_remove_route_from(uint32_t network, uint8_t prefix_len, uint8_t origin)
+{
+    uint32_t mask = net_prefix_to_mask(prefix_len);
+    for (int i = 0; i < IPV4_ROUTES_MAX; i++) {
+        struct ipv4$route* r = &ipv4$routes[i];
+        if (r->used && r->network == (network & mask) && r->prefix_len == prefix_len && r->origin == origin) {
+            r->used = false;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool ipv4_remove_route(uint32_t network, uint8_t prefix_len)
@@ -421,6 +456,12 @@ void ipv4_routes_json(struct strbuf* sb)
         }
         sb_json_key(sb, "port", false);
         sb_json_str(sb, r->dev->name);
+        sb_json_key(sb, "origin", false);
+        sb_json_str(sb, r->origin == IPV4_ORIGIN_RIP ? "rip" : r->origin == IPV4_ORIGIN_STATIC ? "static" : "connected");
+        if (r->origin == IPV4_ORIGIN_RIP) {
+            sb_json_key(sb, "metric", false);
+            sb_uint(sb, r->metric);
+        }
         sb_char(sb, '}');
     }
     sb_char(sb, ']');

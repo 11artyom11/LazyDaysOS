@@ -10,7 +10,12 @@
 #define IPV4_HEADER_LEN     20                  /* without options */
 #define IPV4_PAYLOAD_MAX    (1500 - IPV4_HEADER_LEN)
 #define IPV4_DEFAULT_TTL    64
-#define IPV4_ROUTES_MAX     16
+#define IPV4_ROUTES_MAX     256                 /* a 100-router RIP mesh needs ~200 */
+
+/* Where a route came from; a lower value wins for the same prefix */
+#define IPV4_ORIGIN_CONNECTED   0
+#define IPV4_ORIGIN_STATIC      1               /* route=, gw=, the DHCP client's default route */
+#define IPV4_ORIGIN_RIP         2
 
 #define IP_PROTO_ICMP       1
 #define IP_PROTO_TCP        6
@@ -47,6 +52,15 @@ bool ipv4_is_own_address(uint32_t ip);
 bool ipv4_add_route(uint32_t network, uint8_t prefix_len, uint32_t gateway, struct netdev* dev);
 
 bool ipv4_remove_route(uint32_t network, uint8_t prefix_len);
+
+/* A route from a routing protocol: refused (false) if the prefix already has a route
+   from a better origin; removing only removes a route of that origin */
+bool ipv4_add_route_from(uint32_t network, uint8_t prefix_len, uint32_t gateway, struct netdev* dev,
+                         uint8_t origin, uint8_t metric);
+bool ipv4_remove_route_from(uint32_t network, uint8_t prefix_len, uint8_t origin);
+
+/* Prefix lengths: true if mask is contiguous ones */
+bool ipv4_mask_valid(uint32_t mask);
 
 /* Longest-prefix match; returns false if dst is unreachable */
 bool ipv4_route_lookup(uint32_t dst, struct netdev** dev, uint32_t* next_hop);

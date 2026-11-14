@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define FUZZ_CMDLINE "eth0=10.0.9.2/24 eth1=10.0.8.2/24 gw=10.0.8.1 nat=eth1 dhcpd=eth0,10.0.9.100,10.0.9.150 " \
-                     "route=192.168.60.0/24,10.0.9.250 http udp_echo admin_password=" FUZZ_PASSWORD
+                     "route=192.168.60.0/24,10.0.9.250 rip=eth0 http udp_echo admin_password=" FUZZ_PASSWORD
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {

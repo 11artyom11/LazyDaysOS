@@ -1,5 +1,6 @@
 #include "api.h"
 #include "auth.h"
+#include "rip.h"
 #include "http.h"
 #include "net.h"
 #include "netdev.h"
@@ -197,6 +198,11 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "forbidden", http_stats.forbidden, false);
     api$$key_uint(&sb, "wrong_host", http_stats.wrong_host, false);
     sb_char(&sb, '}');
+
+    if (rip_running()) {
+        sb_json_key(&sb, "rip", false);
+        rip_json(&sb);
+    }
 
     sb_json_key(&sb, "auth", false);
     sb_char(&sb, '{');

@@ -10,9 +10,9 @@
 #   make -C fuzz seeds        regenerate the seed inputs (from the check_net.sh captures + hand-written)
 #
 # Targets: net (raw frames, both ports), wan (raw frames, WAN port only), http, tcp,
-# dhcp_server, dhcp_client.
+# dhcp_server, dhcp_client, rip.
 
-TARGETS     = net wan http tcp dhcp_server dhcp_client
+TARGETS     = net wan http tcp dhcp_server dhcp_client rip
 ROOT        = ..
 STACK_SRC   = $(wildcard $(ROOT)/kernel/net/*.c) $(ROOT)/kernel/random.c $(ROOT)/kernel/cmdline.c $(ROOT)/libk/util/strbuf.c
 INCLUDES    = -Iinclude -I$(ROOT)/libk/include -I$(ROOT)/kernel/compat/i386/include

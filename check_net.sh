@@ -21,11 +21,15 @@
 #           on 19): bulk transfers, many and concurrent connections, then again
 #           with 10% packet loss in both directions (netem; ifb for the
 #           router -> LAN direction)
+#   rip     three routers in a triangle speaking RIPv2, joined by bridges in the
+#           LAN host's namespace: convergence, metrics, poisoned reverse, a cut
+#           cable (QEMU set_link) and a silent link failure (timeout) rerouted
+#           around, forged and malformed RIP refused
 #
 # Kernel serial output goes to qemu_<scenario>.log, traffic to qemu_<scenario>_{lan,wan}.pcap.
 
 KERNEL=${1:-LazyDaysOS.bin}
-SCENARIOS="${SCENARIOS:-static home tcp}"
+SCENARIOS="${SCENARIOS:-static home tcp rip}"
 LAN_HOST=10.0.9.1
 ROUTER_LAN=10.0.9.2
 ROUTER_WAN=10.0.8.2
@@ -880,6 +884,238 @@ else:
         print('connected: ' + c.recv(100).decode(errors='replace').splitlines()[0])
     except Exception as e:
         print('connected: %r' % e)"
+}
+
+# ------------------------------------------------------------------- rip ----
+
+# rip_inject DEV SRC_IP SRC_PORT COMMAND [addr,mask,metric ...]
+# One RIPv2 message broadcast on DEV (raw Ethernet), e.g. from a rogue neighbour
+rip_inject() {
+    python3 - "$@" <<'PY'
+import fcntl, socket, struct, sys
+dev, src, sport, cmd = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+ip = lambda a: struct.unpack('!I', socket.inet_aton(a))[0]
+payload = struct.pack('!BBH', cmd, 2, 0)
+for spec in sys.argv[5:]:
+    addr, mask, metric = spec.split(',')
+    payload += struct.pack('!HHIIII', 2, 0, ip(addr), ip(mask), 0, int(metric))
+udp = struct.pack('!HHHH', sport, 520, 8 + len(payload), 0) + payload
+hdr = struct.pack('!BBHHHBBH4s4s', 0x45, 0, 20 + len(udp), 0, 0, 1, 17, 0, socket.inet_aton(src), b'\xff' * 4)
+s = sum(struct.unpack('!10H', hdr))
+while s >> 16:
+    s = (s & 0xFFFF) + (s >> 16)
+hdr = hdr[:10] + struct.pack('!H', ~s & 0xFFFF) + hdr[12:]
+sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+# The interface's MAC (SIOCGIFHWADDR): /sys shows the host's interfaces, not this namespace's
+mac = fcntl.ioctl(sock.fileno(), 0x8927, struct.pack('256s', dev.encode()))[18:24]
+sock.bind((dev, 0))
+sock.send(b'\xff' * 6 + mac + b'\x08\x00' + hdr + udp)
+print('sent')
+PY
+}
+
+# rip_listen DEV FROM_IP SECONDS NETWORK/LEN: the metric FROM_IP announces for
+# NETWORK on DEV's link ("metric N", or "absent" if it never mentions it)
+rip_listen() {
+    python3 - "$@" <<'PY'
+import socket, struct, sys, time
+dev, src, seconds, target = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
+net, plen = target.split('/')
+want = (socket.inet_aton(net), struct.pack('!I', (0xFFFFFFFF << (32 - int(plen))) & 0xFFFFFFFF))
+sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0800))
+sock.bind((dev, 0))
+sock.settimeout(0.5)
+found, deadline = None, time.time() + seconds
+while time.time() < deadline:
+    try:
+        frame = sock.recv(2000)
+    except socket.timeout:
+        continue
+    ip = frame[14:]
+    ihl = (ip[0] & 15) * 4
+    if ip[9] != 17 or ip[12:16] != socket.inet_aton(src) or struct.unpack('!H', ip[ihl + 2:ihl + 4])[0] != 520:
+        continue
+    rip = ip[ihl + 8:]
+    if rip[0] != 2:
+        continue
+    for off in range(4, len(rip) - 19, 20):
+        if (rip[off + 4:off + 8], rip[off + 8:off + 12]) == want:
+            found = struct.unpack('!I', rip[off + 16:off + 20])[0]
+print('metric %d' % found if found is not None else 'absent')
+PY
+}
+
+# rip_route ROUTER_IP NETWORK/LEN: "via GATEWAY PORT metric N origin O" from /api/stats, or "none"
+rip_route() {
+    curl -s -u admin:$ADMIN_PW --max-time 5 http://$1/api/stats | python3 -c "
+import json, sys
+routes = [r for r in json.load(sys.stdin)['routes'] if r['network'] == '$2']
+print(' '.join(['via %s %s metric %s origin %s' % (r['gateway'], r['port'], r.get('metric'), r['origin']) for r in routes]) or 'none')"
+}
+
+# ping_recovers HOST SECONDS: how long until a ping to HOST gets through (polls every 0.5 s)
+ping_recovers() {
+    python3 - "$1" "$2" <<'PY'
+import subprocess, sys, time
+host, limit = sys.argv[1], float(sys.argv[2])
+start = time.time()
+while time.time() - start < limit:
+    if subprocess.run(['ping', '-c', '1', '-W', '1', host], stdout=subprocess.DEVNULL).returncode == 0:
+        print('recovered after %.1f s' % (time.time() - start))
+        sys.exit(0)
+    time.sleep(0.5)
+print('no reply within %d s' % limit)
+PY
+}
+
+scenario_rip() {
+    ADMIN_PW=rip-test-pw
+    TIMERS=rip_timers=2,6,4
+    ip link set lo up
+    ip tuntap add dev tap0 mode tap
+    ip addr add $LAN_HOST/24 dev tap0
+    ip link set tap0 up
+    ip route add default via $ROUTER_LAN
+    for link in 12 23 13; do
+        ip link add br$link type bridge
+        ip link set br$link up
+        for side in a b; do
+            ip tuntap add dev t$link$side mode tap
+            ip link set t$link$side master br$link
+            ip link set t$link$side up
+        done
+    done
+    ip tuntap add dev tap1 mode tap
+    # Two bridges carry an address of this namespace, for listening and injecting
+    ip addr add 10.12.0.9/24 dev br12
+    ip addr add 10.13.0.9/24 dev br13
+
+    rm -f qemu_rip_r?.log qemu_rip_lan.pcap qemu_rip_wan.pcap
+    # $1 name, $2 MAC prefix, $3 command line, then "tap[:pcap]" for each port in order
+    router() {
+        name=$1; mac=$2; append=$3; shift 3
+        args=""; n=0
+        for port in "$@"; do
+            tap=${port%%:*}
+            args="$args -netdev tap,id=n$n,ifname=$tap,script=no,downscript=no -device e1000,netdev=n$n,mac=$mac:0$n"
+            [ "$tap" != "$port" ] && args="$args -object filter-dump,id=d$n,netdev=n$n,file=${port#*:}"
+            n=$((n + 1))
+        done
+        qemu-system-i386 -kernel "$KERNEL" -append "$append" -display none -no-reboot \
+            -serial file:qemu_rip_$name.log -monitor unix:$TMP/$name.mon,server,nowait $args &
+    }
+    router r1 52:54:00:00:01 "eth0=$ROUTER_LAN/24 eth1=10.12.0.1/24 eth2=10.13.0.1/24 rip=eth1,eth2 $TIMERS http admin_password=$ADMIN_PW" \
+        tap0:qemu_rip_lan.pcap t12a t13a
+    R1=$!
+    router r2 52:54:00:00:02 "eth0=10.12.0.2/24 eth1=10.23.0.2/24 rip=eth0,eth1 $TIMERS" t12b t23a
+    R2=$!
+    router r3 52:54:00:00:03 "eth0=10.23.0.3/24 eth1=10.13.0.3/24 eth2=$ROUTER_WAN/24 rip=eth0,eth1 $TIMERS http admin_password=$ADMIN_PW" \
+        t23b t13b tap1:qemu_rip_wan.pcap
+    R3=$!
+    unshare --net sleep 600 &
+    WAN_PID=$!
+    trap 'kill $R1 $R2 $R3 $WAN_PID 2>/dev/null; rm -rf $TMP' EXIT
+    sleep 0.5
+    ip link set tap1 netns $WAN_PID
+    wan ip link set lo up
+    wan ip addr add $WAN_HOST/24 dev tap1
+    wan ip link set tap1 up
+    wan ip route add default via $ROUTER_WAN
+    monitor() { echo "$2" | socat - UNIX-CONNECT:$TMP/$1.mon > /dev/null; }
+    for r in r1 r2 r3; do
+        LOG=qemu_rip_$r.log
+        wait_for_log 'getting kernel ready' 150 || { echo "[ERROR] $r did not boot"; cat $LOG; exit 1; }
+    done
+    LOG=qemu_rip_r1.log
+
+    echo "--- convergence"
+    check_output "LAN host reaches the far network through RIP routes" "^recovered after" ping_recovers $WAN_HOST 20
+    check_output "R1 learned the far network from R3 directly: metric 2" "^via 10.13.0.3 eth2 metric 2 origin rip$" \
+        rip_route $ROUTER_LAN 10.0.8.0/24
+    check_output "R3 learned the LAN from R1 directly: metric 2" "^via 10.13.0.1 eth1 metric 2 origin rip$" \
+        rip_route $ROUTER_WAN 10.0.9.0/24
+    check_output "the path is two routers long (TTL 62)" "ttl=62" ping -c 1 -W 2 $WAN_HOST
+    check_output "connected networks stay connected" "^via None eth0 metric None origin connected$" \
+        rip_route $ROUTER_LAN 10.0.9.0/24
+    check_output "poisoned reverse: R1 announces the far network back to R3 as unreachable" "^metric 16$" \
+        rip_listen br13 10.13.0.1 5 10.0.8.0/24
+    check_output "split horizon is per link: R1 announces it to R2 normally" "^metric 2$" \
+        rip_listen br12 10.12.0.1 5 10.0.8.0/24
+
+    echo "--- a cut cable between R1 and R3 (both NICs see the link go down)"
+    monitor r1 "set_link n2 off"
+    monitor r3 "set_link n1 off"
+    check_output "traffic is rerouted through R2" "^recovered after" ping_recovers $WAN_HOST 15
+    check_output "R1 now routes via R2: metric 3" "^via 10.12.0.2 eth1 metric 3 origin rip$" rip_route $ROUTER_LAN 10.0.8.0/24
+    check_output "the path is three routers long (TTL 61)" "ttl=61" ping -c 1 -W 2 $WAN_HOST
+    check_output "the link failure was logged" "eth2 link down" curl -s -u admin:$ADMIN_PW http://$ROUTER_LAN/api/events
+    monitor r1 "set_link n2 on"
+    monitor r3 "set_link n1 on"
+    sleep 6
+    check_output "with the cable back, R1 uses the direct path again" "^via 10.13.0.3 eth2 metric 2 origin rip$" \
+        rip_route $ROUTER_LAN 10.0.8.0/24
+
+    echo "--- a silent failure: frames between R1 and R3 vanish, the links stay up"
+    ip link set t13b down
+    check_output "detected by the RIP timeout and rerouted" "^recovered after" ping_recovers $WAN_HOST 20
+    check_output "R1 routes via R2 again" "^via 10.12.0.2 eth1 metric 3 origin rip$" rip_route $ROUTER_LAN 10.0.8.0/24
+    ip link set t13b up
+    sleep 6
+
+    echo "--- forged and malformed RIP"
+    rip_inject tap0 $LAN_HOST 520 2 192.168.66.0,255.255.255.0,1 > /dev/null
+    rip_inject br12 10.99.0.1 520 2 192.168.67.0,255.255.255.0,1 > /dev/null
+    rip_inject br12 10.12.0.9 5555 2 192.168.68.0,255.255.255.0,1 > /dev/null
+    rip_inject br12 10.12.0.9 520 2 127.0.0.0,255.0.0.0,1 224.0.0.0,240.0.0.0,1 10.66.0.1,255.255.255.0,1 \
+        10.67.0.0,255.0.255.0,1 10.68.0.0,255.255.0.0,0 10.69.0.0,255.255.0.0,17 > /dev/null
+    sleep 1
+    check_output "RIP from a LAN host on a non-RIP port is ignored" "^none$" rip_route $ROUTER_LAN 192.168.66.0/24
+    check_output "RIP from a source outside the link's network is ignored" "^none$" rip_route $ROUTER_LAN 192.168.67.0/24
+    check_output "RIP responses not from port 520 are ignored" "^none$" rip_route $ROUTER_LAN 192.168.68.0/24
+    check_output "invalid entries (loopback, multicast, host bits, broken mask, metric 0/17) are dropped" "^ignored, rx_bad " \
+        sh -c "curl -s -u admin:$ADMIN_PW http://$ROUTER_LAN/api/stats | python3 -c \"
+import json, sys
+s = json.load(sys.stdin)
+bad = [r['network'] for r in s['routes'] if r['network'] in ('127.0.0.0/8', '224.0.0.0/4', '10.66.0.0/24', '10.66.0.1/24', '10.67.0.0/16', '10.68.0.0/16', '10.69.0.0/16')]
+print('installed %s' % bad if bad or s['rip']['rx_bad'] < 6 else 'ignored, rx_bad %d' % s['rip']['rx_bad'])\""
+    # A neighbour on a RIP link is trusted (RIPv2 without authentication): its withdrawal works
+    rip_inject br12 10.12.0.9 520 2 192.168.77.0,255.255.255.0,1 > /dev/null
+    sleep 1
+    check_output "a neighbour's route is learned (metric +1)" "^via 10.12.0.9 eth1 metric 2 origin rip$" \
+        rip_route $ROUTER_LAN 192.168.77.0/24
+    rip_inject br12 10.12.0.9 520 2 192.168.77.0,255.255.255.0,16 > /dev/null
+    # Withdrawn with metric 16; around the triangle RIP may count to infinity first
+    # (each router re-learns it from a neighbour that still has it, one hop worse,
+    # until 16): the route must be gone within the bound that implies
+    check_output "a withdrawn route disappears (after counting to infinity, if it does)" "^gone after " python3 - <<PY
+import json, subprocess, time
+start, seen = time.time(), []
+while time.time() - start < 40:
+    out = subprocess.run(['curl', '-s', '-u', 'admin:$ADMIN_PW', '--max-time', '5', 'http://$ROUTER_LAN/api/stats'],
+                         capture_output=True, text=True).stdout
+    r = [x for x in json.loads(out)['routes'] if x['network'] == '192.168.77.0/24']
+    if not r:
+        print('gone after %.1f s; metrics seen on the way: %s' % (time.time() - start, seen or 'none'))
+        break
+    if not seen or seen[-1] != r[0]['metric']:
+        seen.append(r[0]['metric'])
+    time.sleep(0.25)
+else:
+    print('still there after 40 s: %s' % seen)
+PY
+    check_output "/api/stats counts RIP traffic" "^counted " sh -c "curl -s -u admin:$ADMIN_PW http://$ROUTER_LAN/api/stats | python3 -c \"
+import json, sys
+r = json.load(sys.stdin)['rip']
+# tx_triggered may be 0: with 2 s updates a periodic one often goes out before a trigger is due (1-5 s)
+ok = r['rx_refused'] >= 2 and r['rx_bad'] >= 6 and r['tx_updates'] > 0 and r['route_changes'] > 0 and r['ports'] == ['eth1', 'eth2']
+print(('counted ' if ok else 'wrong: ') + json.dumps({k: v for k, v in r.items() if k != 'routes'}))\""
+    for r in r1 r2 r3; do
+        if grep -q "K_PANIC" qemu_rip_$r.log; then
+            fail "$r panicked: $(grep -m1 K_PANIC qemu_rip_$r.log)"
+        fi
+    done
+    kill $R2 $R3 $WAN_PID 2>/dev/null
+    QEMU_PID=$R1                        # the common ending stops it and waits for it
 }
 
 # ------------------------------------------------------------------- tcp ----

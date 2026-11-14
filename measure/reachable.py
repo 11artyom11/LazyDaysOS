@@ -22,7 +22,7 @@ FUZZ = os.path.join(ROOT, "fuzz")
 COV = os.path.join(FUZZ, "build", "cov")
 SOURCES = sorted(glob.glob(os.path.join(ROOT, "kernel/net/*.c"))) + [
     os.path.join(ROOT, p) for p in ("kernel/random.c", "kernel/cmdline.c", "libk/util/strbuf.c")]
-TARGETS = ["net", "wan", "http", "tcp", "dhcp_server", "dhcp_client"]
+TARGETS = ["net", "wan", "http", "tcp", "dhcp_server", "dhcp_client", "rip"]
 
 
 def reset():

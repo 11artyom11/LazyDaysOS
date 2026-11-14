@@ -17,7 +17,7 @@
     Everything except / and /api/login needs a login (auth.h).
 */
 
-#define API_JSON_MAX    16384
+#define API_JSON_MAX    65536           /* /api/stats with a full 256-route table is ~30 KiB */
 
 bool api_start(uint16_t port);
 
