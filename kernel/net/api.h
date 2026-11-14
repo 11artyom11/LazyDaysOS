@@ -7,11 +7,14 @@
 /*
     The router's management API, served by the HTTP server:
 
-    GET  /                  dashboard page
+    GET  /                  dashboard page (public; it asks for the password)
+    POST /api/login, /api/logout, GET /api/session, POST /api/password: see auth.h
     GET  /api/stats         everything the dashboard shows, as one JSON object
     GET  /api/events?since=N  events with id > N (JSON array)
     POST /api/block?ip=a.b.c.d    stop forwarding for that inside host
     POST /api/unblock?ip=a.b.c.d
+
+    Everything except / and /api/login needs a login (auth.h).
 */
 
 #define API_JSON_MAX    16384

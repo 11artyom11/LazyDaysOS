@@ -2,6 +2,7 @@
 #include "tcp.h"
 #include "ipv4.h"
 #include "nat.h"
+#include "net.h"
 #include <strbuf.h>
 #include <pit.h>
 #include "../heap.h"
@@ -11,6 +12,7 @@ struct http$route
     const char* method;
     const char* path;
     http_handler handler;
+    uint32_t flags;
 };
 
 struct http$conn
@@ -23,7 +25,7 @@ struct http$conn
     size_t request_len;
 
     /* Response being streamed: header, then body */
-    char header[256];
+    char header[640];
     size_t header_len;
     size_t header_sent;
     const uint8_t* body;
@@ -33,6 +35,7 @@ struct http$conn
 };
 
 static struct http$route http$routes[HTTP_MAX_ROUTES];
+static http_guard http$guard = NULL;
 static struct http$conn http$conns[TCP_MAX_CONNS];
 
 struct http_stats http_stats;
@@ -66,28 +69,37 @@ static const char* http$$reason(int status)
     switch (status) {
     case 200: return "OK";
     case 400: return "Bad Request";
+    case 401: return "Unauthorized";
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
     case 408: return "Request Timeout";
     case 413: return "Content Too Large";
+    case 421: return "Misdirected Request";
+    case 429: return "Too Many Requests";
     case 431: return "Request Header Fields Too Large";
     case 503: return "Service Unavailable";
     default: return "Internal Server Error";
     }
 }
 
-bool http_route(const char* method, const char* path, http_handler handler)
+bool http_route(const char* method, const char* path, http_handler handler, uint32_t flags)
 {
     for (int i = 0; i < HTTP_MAX_ROUTES; i++) {
         if (http$routes[i].handler == NULL) {
             http$routes[i].method = method;
             http$routes[i].path = path;
             http$routes[i].handler = handler;
+            http$routes[i].flags = flags;
             return true;
         }
     }
     return false;
+}
+
+void http_set_guard(http_guard guard)
+{
+    http$guard = guard;
 }
 
 void http_respond_text(struct http_response* response, int status, const char* content_type, const char* text)
@@ -135,6 +147,82 @@ bool http_query_param(const char* query, const char* name, char* out, size_t out
     return false;
 }
 
+static int http$$hex(char c)
+{
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+bool http_form_param(const char* body, size_t body_len, const char* name, char* out, size_t out_cap)
+{
+    size_t i = 0;
+    while (i < body_len) {
+        size_t n = 0;
+        while (name[n] && i + n < body_len && body[i + n] == name[n]) {
+            n++;
+        }
+        if (name[n] == '\0' && i + n < body_len && body[i + n] == '=') {
+            size_t len = 0;
+            for (i += n + 1; i < body_len && body[i] != '&'; i++) {
+                char c = body[i];
+                if (c == '+') {
+                    c = ' ';
+                } else if (c == '%') {
+                    int hi = i + 2 < body_len ? http$$hex(body[i + 1]) : -1;
+                    int lo = i + 2 < body_len ? http$$hex(body[i + 2]) : -1;
+                    if (hi < 0 || lo < 0) {
+                        return false;
+                    }
+                    c = (char)(hi * 16 + lo);
+                    i += 2;
+                }
+                if (len + 1 >= out_cap || c == '\0') {
+                    return false;
+                }
+                out[len++] = c;
+            }
+            out[len] = '\0';
+            return true;
+        }
+        while (i < body_len && body[i] != '&') {
+            i++;
+        }
+        i++;
+    }
+    return false;
+}
+
+/* Host header names the router: one of its addresses, or localhost (port ignored) */
+static bool http$$host_allowed(const char* host)
+{
+    char name[32];
+    size_t len = 0;
+    while (host[len] && host[len] != ':') {
+        if (len + 1 >= sizeof(name)) {
+            return false;
+        }
+        char c = host[len];
+        name[len++] = (c >= 'A' && c <= 'Z') ? (char)(c + 'a' - 'A') : c;
+    }
+    name[len] = '\0';
+    uint32_t ip;
+    if (net_parse_ip(name, &ip)) {
+        return ipv4_is_own_address(ip) || ip == NET_IP(127, 0, 0, 1);
+    }
+    return http$$streq(name, "localhost");
+}
+
+/* Origin, if present, must be "http://" + Host */
+static bool http$$same_origin(const char* origin, const char* host)
+{
+    const char* prefix = "http://";
+    while (*prefix) {
+        if (*origin++ != *prefix++) {
+            return false;
+        }
+    }
+    return http$$streq(origin, host);
+}
+
 /* Queue as much of the response as the TCP send buffer takes; close when all is queued */
 static void http$$pump(struct http$conn* h)
 {
@@ -161,7 +249,10 @@ static void http$$respond(struct http$conn* h, struct http_response* r)
     sb_str(&sb, r->content_type ? r->content_type : "text/plain");
     sb_str(&sb, "\r\nContent-Length: ");
     sb_uint(&sb, (uint32_t)r->body_len);
-    sb_str(&sb, "\r\nCache-Control: no-store\r\nConnection: close\r\n");
+    sb_str(&sb, "\r\nCache-Control: no-store\r\nConnection: close\r\n"
+                "X-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\n"
+                "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'\r\n");
     if (r->extra_headers) {
         sb_str(&sb, r->extra_headers);
     }
@@ -213,6 +304,42 @@ static void http$$dispatch(struct http$conn* h, char* body, size_t body_len)
         http$$error(h, 400, "not HTTP\n");
         return;
     }
+
+    /* Headers we use: terminate each value in place */
+    struct http_request request = {0};
+    char* line = version;
+    while (*line && *line != '\n') {
+        line++;
+    }
+    while (*line == '\n' && line[1]) {
+        line++;
+        char* value = line;
+        while (*value && *value != ':' && *value != '\r') {
+            value++;
+        }
+        char* end = value;
+        while (*end && *end != '\r') {
+            end++;
+        }
+        if (*value == ':') {
+            const char** field = http$$header_is(line, "host") ? &request.host
+                               : http$$header_is(line, "origin") ? &request.origin
+                               : http$$header_is(line, "cookie") ? &request.cookie
+                               : http$$header_is(line, "authorization") ? &request.authorization
+                               : http$$header_is(line, "x-csrf-token") ? &request.csrf_token : NULL;
+            value++;
+            while (*value == ' ' || *value == '\t') {
+                value++;
+            }
+            if (field) {
+                *field = value;
+            }
+        }
+        line = end;
+        if (*line == '\r') {
+            *line++ = '\0';            /* now at the '\n' ending this header */
+        }
+    }
     char* query = target;
     while (*query && *query != '?') {
         query++;
@@ -230,10 +357,28 @@ static void http$$dispatch(struct http$conn* h, char* body, size_t body_len)
         return;
     }
 
-    struct http_request request = {
-        .method = method, .path = target, .query = query,
-        .body = body, .body_len = body_len, .remote_ip = tcp_remote_ip(h->tcp),
-    };
+    /* Requests must name the router (DNS rebinding), POSTs must not be cross-site (CSRF) */
+    if (!request.host) {
+        http$$error(h, 400, "Host header required\n");
+        return;
+    }
+    if (!http$$host_allowed(request.host)) {
+        http_stats.wrong_host++;
+        http$$error(h, 421, "this is not the host you asked for\n");
+        return;
+    }
+    if (request.origin && http$$streq(method, "POST") && !http$$same_origin(request.origin, request.host)) {
+        http_stats.forbidden++;
+        http$$error(h, 403, "cross-site request refused\n");
+        return;
+    }
+
+    request.method = method;
+    request.path = target;
+    request.query = query;
+    request.body = body;
+    request.body_len = body_len;
+    request.remote_ip = tcp_remote_ip(h->tcp);
     bool path_known = false;
     for (int i = 0; i < HTTP_MAX_ROUTES && http$routes[i].handler; i++) {
         if (!http$$streq(http$routes[i].path, target)) {
@@ -243,7 +388,9 @@ static void http$$dispatch(struct http$conn* h, char* body, size_t body_len)
         if (http$$streq(http$routes[i].method, method)) {
             struct http_response response = {.status = 200};
             http_stats.requests++;
-            http$routes[i].handler(&request, &response);
+            if ((http$routes[i].flags & HTTP_PUBLIC) || !http$guard || http$guard(&request, &response)) {
+                http$routes[i].handler(&request, &response);
+            }
             http$$respond(h, &response);
             return;
         }

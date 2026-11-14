@@ -143,6 +143,8 @@ class Lab:
                 "link_id": egress["link_id"], "filters": egress.get("filters") or {},
                 "running": all(n["status"] == "started" for n in members),
                 "http": bool(router and "http" in cmdline.split()),
+                "password": next((w.split("=", 1)[1] for w in (cmdline or "").split()
+                                  if w.startswith("admin_password=")), None),
             }
         self.topology = {
             "nodes": [{"id": n["node_id"], "name": n["name"], "type": n["node_type"], "symbol": n["symbol"],
@@ -527,9 +529,19 @@ class RouterPoller(threading.Thread):
             hub.publish({"type": "router", "row": row, "ok": False,
                          "message": f"{r['router']} has no 'http' on its command line"})
             return
-        out = docker_exec(r["client"], "curl", "-s", "-m", "1", f"http://{r['router_ip']}/api/stats", timeout=3)
+        if not r["password"]:
+            hub.publish({"type": "router", "row": row, "ok": False,
+                         "message": f"{r['router']} has no admin_password= on its command line, so its API "
+                                    "can't be read (the kernel prints a random password on its console instead)"})
+            return
+        out = docker_exec(r["client"], "curl", "-s", "-m", "1", "-u", f"admin:{r['password']}",
+                          f"http://{r['router_ip']}/api/stats", timeout=3)
         now = time.time()
         stats = json.loads(out.stdout)
+        if "error" in stats:
+            hub.publish({"type": "router", "row": row, "ok": False,
+                         "message": f"{r['router']} refused the API request: {stats['error']}"})
+            return
         prev = self.prev.get(row)
         self.prev[row] = (now, stats)
         self.last[row] = stats

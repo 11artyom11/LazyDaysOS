@@ -127,6 +127,7 @@ header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-
 .chip.wan { background: var(--wan-soft); color: var(--wan); }
 .chip.firewall { background: var(--bad-soft); color: var(--bad); }
 .chip.system { background: var(--gray-soft); color: var(--muted); }
+.chip.auth { background: rgba(217,119,6,.14); color: var(--warn); }
 .events .when { font-size: 12px; color: var(--muted); }
 
 /* Details */
@@ -145,6 +146,30 @@ table.routes th { color: var(--muted); font-weight: 500; }
 .bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
 .bar > div { height: 100%; background: linear-gradient(90deg, var(--down), var(--lan)); }
 footer { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--muted); }
+
+/* Sign-in screen and password dialog */
+.gate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-items: center; padding: 16px; }
+.gate[hidden] { display: none; }
+.signin { width: 100%; max-width: 380px; padding: 26px 24px 22px; }
+.signin .logo { margin-bottom: 14px; }
+.signin h1 { font-size: 20px; font-weight: 650; letter-spacing: -.01em; margin: 0 0 4px; }
+.signin p { margin: 0 0 18px; font-size: 13.5px; color: var(--muted); }
+.field { display: grid; gap: 5px; margin-bottom: 14px; font-size: 13px; font-weight: 550; }
+.field input { font: inherit; font-size: 15px; font-weight: 400; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); width: 100%; }
+.field input:focus { outline: 2px solid var(--lan); outline-offset: 1px; border-color: transparent; }
+.primary { font: inherit; font-size: 14.5px; font-weight: 600; width: 100%; height: 40px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--down); color: #fff; }
+.primary:disabled { opacity: .6; cursor: progress; }
+.formerror { min-height: 20px; margin: -4px 0 10px; font-size: 13px; color: var(--bad); }
+.hint { margin-top: 16px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.hint code { font-family: var(--mono); font-size: 12px; }
+dialog.card { border: 1px solid var(--line); color: var(--text); padding: 22px 22px 18px; width: min(380px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(15,23,42,.45); }
+dialog h2 { margin-bottom: 14px; font-size: 17px; }
+.dialog-actions { display: flex; gap: 10px; }
+.dialog-actions .iconbtn { height: 40px; flex: 0 0 auto; padding: 0 16px; }
+.signedin[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -160,6 +185,8 @@ footer { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--m
     <div class="spacer"></div>
     <span class="pill bad" id="status"><span class="dot"></span><span id="status-text">offline</span></span>
     <button class="iconbtn" id="theme" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+    <button class="iconbtn signedin" id="change-password" type="button" hidden>Password</button>
+    <button class="iconbtn signedin" id="logout" type="button" hidden>Sign out</button>
   </header>
 
   <section class="grid kpis" aria-label="Key numbers">
@@ -203,6 +230,44 @@ footer { margin-top: 18px; text-align: center; font-size: 12.5px; color: var(--m
 
   <footer>Served by the LazyDaysOS kernel itself · this page polls <span class="mono">/api/stats</span> once a second</footer>
 </main>
+
+<div class="gate" id="gate" hidden>
+  <form class="card signin" id="login-form" autocomplete="on">
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 32 32"><rect x="3" y="14" width="26" height="12" rx="3" fill="#fff"/><circle cx="9" cy="20" r="2" fill="#14b8a6"/><circle cx="15" cy="20" r="2" fill="#14b8a6"/><path d="M22 14V6M26 14V9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
+    </div>
+    <h1>Sign in to your router</h1>
+    <p id="login-reason">Enter the administrator password.</p>
+    <input type="text" name="username" value="admin" autocomplete="username" hidden>
+    <label class="field">Password
+      <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+    </label>
+    <div class="formerror" id="login-error" role="alert"></div>
+    <button class="primary" id="login-submit" type="submit">Sign in</button>
+    <div class="hint">Unless one was set with <code>admin_password=</code> on the kernel command line, the router prints a new random password on its console at every boot.</div>
+  </form>
+</div>
+
+<dialog class="card" id="password-dialog">
+  <form id="password-form">
+    <h2>Change password</h2>
+    <label class="field">Current password
+      <input type="password" id="pw-current" autocomplete="current-password" required>
+    </label>
+    <label class="field"><span>New password <span class="muted" style="font-weight:400">(8–64 characters)</span></span>
+      <input type="password" id="pw-new" autocomplete="new-password" minlength="8" maxlength="64" required>
+    </label>
+    <label class="field">Repeat new password
+      <input type="password" id="pw-repeat" autocomplete="new-password" minlength="8" maxlength="64" required>
+    </label>
+    <div class="formerror" id="pw-error" role="alert"></div>
+    <div class="dialog-actions">
+      <button class="primary" id="pw-submit" type="submit">Change password</button>
+      <button class="iconbtn" id="pw-cancel" type="button">Cancel</button>
+    </div>
+    <div class="hint">Other signed-in browsers are signed out. The password lasts until the router restarts.</div>
+  </form>
+</dialog>
 <script>
 "use strict";
 const HISTORY = 120;                         // seconds of traffic history kept per port
@@ -477,13 +542,25 @@ function renderDetails(s) {
 }
 
 /* ---------- data ---------- */
+const auth = { signedIn: false, csrf: null };
+
+// Errors carry the HTTP status and the router's JSON error body, if any
 async function getJSON(url, options = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 4000);
+  const headers = { ...(options.headers || {}) };
+  if (options.method === "POST" && auth.csrf) headers["X-CSRF-Token"] = auth.csrf;   // every state change proves it's from this page
   try {
-    const r = await fetch(url, { ...options, signal: ctl.signal, cache: "no-store" });
-    if (!r.ok) throw new Error(r.status + " " + url);
-    return await r.json();
+    const r = await fetch(url, { ...options, headers, signal: ctl.signal, cache: "no-store", credentials: "same-origin" });
+    const body = await r.json().catch(() => null);
+    if (!r.ok) {
+      const err = new Error((body && body.error) || (r.status + " " + url));
+      err.status = r.status;
+      err.body = body;
+      if (r.status === 401 && url !== "/api/login" && url !== "/api/session") showLogin("Your session ended. Sign in again.");
+      throw err;
+    }
+    return body;
   } finally {
     clearTimeout(timer);
   }
@@ -516,7 +593,7 @@ function setOnline(online, detail) {
 
 let busy = false;
 async function refresh() {
-  if (busy) return;                          // a slow router: don't pile up requests
+  if (busy || !auth.signedIn) return;        // a slow router: don't pile up requests
   busy = true;
   try {
     const s = await getJSON("/api/stats");
@@ -537,7 +614,7 @@ async function refresh() {
     if ($("details").open || !state.prev) renderDetails(s);
     state.prev = s;
   } catch (err) {
-    setOnline(false, "can't reach the router (" + err.message + "), retrying…");
+    if (err.status !== 401) setOnline(false, "can't reach the router (" + err.message + "), retrying…");
   } finally {
     busy = false;
   }
@@ -548,7 +625,7 @@ async function toggleBlock(ip, block) {
   try {
     await getJSON("/api/" + (block ? "block" : "unblock") + "?ip=" + encodeURIComponent(ip), { method: "POST" });
   } catch (err) {
-    alert("Couldn't " + (block ? "block " : "unblock ") + ip + ": " + err.message);
+    if (err.status !== 401) alert("Couldn't " + (block ? "block " : "unblock ") + ip + ": " + err.message);
   } finally {
     state.pending.delete(ip);
     refresh();
@@ -571,7 +648,94 @@ $("theme").onclick = () => {
 $("details").addEventListener("toggle", () => { if (state.prev) renderDetails(state.prev); });
 window.addEventListener("resize", drawChart);
 
-refresh();
+/* ---------- sign-in ---------- */
+function signedIn(csrf) {
+  auth.signedIn = true;
+  auth.csrf = csrf;
+  $("gate").hidden = true;
+  document.querySelectorAll(".signedin").forEach((b) => (b.hidden = false));
+  refresh();
+}
+
+function showLogin(reason) {
+  auth.signedIn = false;
+  auth.csrf = null;
+  document.querySelectorAll(".signedin").forEach((b) => (b.hidden = true));
+  $("login-reason").textContent = reason || "Enter the administrator password.";
+  $("login-error").textContent = "";
+  $("gate").hidden = false;
+  setOnline(false, "signed out");
+  $("login-password").focus();
+}
+
+function retryText(err) {
+  const s = err.body && err.body.retry_after_s;
+  return "Too many wrong passwords. Try again in " + (s ? s + " s" : "a minute") + ".";
+}
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = $("login-submit");
+  button.disabled = true;
+  $("login-error").textContent = "";
+  try {
+    const s = await getJSON("/api/login", { method: "POST", body: new URLSearchParams({ password: $("login-password").value }) });
+    $("login-password").value = "";
+    signedIn(s.csrf);
+  } catch (err) {
+    $("login-error").textContent = err.status === 401 ? "Wrong password." : err.status === 429 ? retryText(err) : "Couldn't reach the router.";
+    $("login-password").select();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("logout").onclick = async () => {
+  try { await getJSON("/api/logout", { method: "POST" }); } catch (err) { /* signed out either way */ }
+  showLogin("You signed out.");
+};
+
+$("change-password").onclick = () => {
+  $("password-form").reset();
+  $("pw-error").textContent = "";
+  $("password-dialog").showModal();
+};
+$("pw-cancel").onclick = () => $("password-dialog").close();
+$("password-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fresh = $("pw-new").value;
+  if (fresh !== $("pw-repeat").value) {
+    $("pw-error").textContent = "The new passwords don't match.";
+    return;
+  }
+  $("pw-submit").disabled = true;
+  try {
+    await getJSON("/api/password", { method: "POST", body: new URLSearchParams({ current: $("pw-current").value, new: fresh }) });
+    $("password-dialog").close();
+    $("subtitle").textContent = "Password changed.";
+  } catch (err) {
+    $("pw-error").textContent = err.status === 403 ? "The current password is wrong."
+      : err.status === 429 ? retryText(err) : err.message;
+  } finally {
+    $("pw-submit").disabled = false;
+  }
+});
+
+// Already signed in (the session cookie survives a reload, the CSRF token doesn't)?
+async function start() {
+  try {
+    const s = await getJSON("/api/session");
+    signedIn(s.csrf);
+  } catch (err) {
+    if (err.status === 401) {
+      showLogin();
+      return;
+    }
+    setOnline(false, "can't reach the router, retrying…");
+    setTimeout(start, 2000);
+  }
+}
+start();
 setInterval(refresh, 1000);
 </script>
 </body>

@@ -15,9 +15,11 @@
 #
 #   DEMO_SECONDS=N   stop after N seconds instead of following the kernel log
 #   DEMO_PORT=N      local port for the dashboard (default 8080)
+#   DEMO_PASSWORD=P  the dashboard's admin password (default lazydays)
 
 KERNEL=${1:-LazyDaysOS.bin}
 PORT=${DEMO_PORT:-8080}
+PASSWORD=${DEMO_PASSWORD:-lazydays}
 LOG=qemu_demo.log
 
 if [ "$LAZY_IN_NETNS" != 1 ]; then
@@ -69,7 +71,7 @@ ip link set tap0 up
 
 rm -f $LOG
 qemu-system-i386 -kernel "$KERNEL" \
-    -append "eth0=10.0.9.2/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 nat=eth1 http" \
+    -append "eth0=10.0.9.2/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 nat=eth1 http admin_password=$PASSWORD" \
     -display none -no-reboot -serial file:$LOG \
     -netdev tap,id=t0,ifname=tap0,script=no,downscript=no -device e1000,netdev=t0 \
     -netdev tap,id=t1,ifname=tap1,script=no,downscript=no -device e1000,netdev=t1 &
@@ -155,7 +157,7 @@ ping -q -I game-console -i 0.2 192.168.50.1 >/dev/null 2>&1 &
 started $!
 
 echo
-echo "  LazyDaysOS dashboard:  http://localhost:$PORT"
+echo "  LazyDaysOS dashboard:  http://localhost:$PORT   (password: $PASSWORD)"
 echo
 echo "  4 devices online: examiner-phone, thesis-laptop, smart-tv, game-console"
 echo "  Try blocking one; its traffic graph drops to zero within a second."

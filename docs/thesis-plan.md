@@ -68,6 +68,26 @@ Each issue gets a test that fails on today's code before it is fixed, per the pr
 - **F2b and F2c:** fixed as described in the table above.
 - `make check` passes: self-tests on TCG and KVM, and 91 network checks.
 
+### Status of F3 (2026-11-14, branch `mgmt-auth`)
+
+| Check in `check_net.sh` | `master` (F1/F2 only) | New kernel |
+|---|---|---|
+| `/api/stats` without credentials | **200** (device list, MACs, hostnames) | 401 |
+| Request with a foreign `Host` (DNS rebinding) | **200** | 421 |
+| POST with a foreign `Origin` (CSRF) | **200** (blocks a device) | 403 |
+| POST in a session without or with a wrong CSRF token | n/a (no sessions) | 403 |
+| 6 password guesses from one address | n/a (no password) | 401 ×5, then 429 with `Retry-After` |
+| No password configured | open to every LAN device | random 12-character password printed on the console |
+| Framing, MIME sniffing | allowed | `X-Frame-Options: DENY`, `nosniff`, CSP `frame-ancestors 'none'` |
+
+- **Browsers use sessions.** An HttpOnly, SameSite=Strict cookie, plus a CSRF token on every POST.
+- **Scripts use HTTP Basic** (`curl -u admin:...`). It is never offered to browsers.
+- **Guessing is throttled per address:** 5 failures lock that address for 60 s, doubling with each lockout up to 16 min.
+- **The password** comes from `admin_password=` or is generated at boot; nothing in the image is a shared default (ETSI EN 303 645 provision 5.1, UK PSTI). Changing it from the dashboard lasts until reboot, because there is no flash storage yet.
+- **Dashboard:** sign-in screen, Password and Sign out buttons. `demo.sh` uses `lazydays`; the GNS3 lab uses `admin_password=lazydays-lab`, which `lab_ui.py` reads back from GNS3.
+- **Tests:** `make check` passes (TCG + KVM self-tests, 113 network checks). All 19 new login checks fail on the `master` kernel.
+- **Open:** passwords are compared in plain text in RAM. A proper password hash (needs SHA-256) comes with flash storage in WP5/WP6.
+
 ## 4. Work packages
 
 ### WP0: attack-surface inventory and comparison baseline (1 week)

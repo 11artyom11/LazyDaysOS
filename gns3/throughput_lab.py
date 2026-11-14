@@ -5,7 +5,8 @@
     routed:    cli-1 -- eth0 R-routed eth1 -- srv-1    plain IPv4 forwarding
     nat:       cli-2 -- eth0  R-nat   eth1 -- srv-2    NAPT + firewall (nat=eth1)
 
-Routers run "http" so lab_ui.py can read their counters from the inside client.
+Routers run "http" with admin_password=lazydays-lab so lab_ui.py can read their
+counters from the inside client (curl -u admin:lazydays-lab).
 
 Hosts are Docker containers (nicolaka/netshoot: iperf3, jq, tcpdump, ...).
 Servers run "iperf3 -s" (their console shows the server log); clients get a
@@ -25,10 +26,10 @@ PROJECT = os.environ.get("LAB_PROJECT", "LazyDaysOS throughput")
 # name, y, router command line (None = no router), client side, server side, server gateway
 ROWS = [
     ("0", -160, None, ("10.0.0.1/24", None), ("10.0.0.2/24", None)),
-    ("1", 0, "eth0=10.1.1.1/24 eth1=10.1.2.1/24 http",
+    ("1", 0, "eth0=10.1.1.1/24 eth1=10.1.2.1/24 http admin_password=lazydays-lab",
      ("10.1.1.2/24", "10.1.1.1"), ("10.1.2.2/24", "10.1.2.1")),
     # the NAT server has no route back to 10.2.1.0/24: replies only work through the NAT
-    ("2", 160, "eth0=10.2.1.1/24 eth1=10.2.2.1/24 nat=eth1 http",
+    ("2", 160, "eth0=10.2.1.1/24 eth1=10.2.2.1/24 nat=eth1 http admin_password=lazydays-lab",
      ("10.2.1.2/24", "10.2.1.1"), ("10.2.2.2/24", None)),
 ]
 ROUTER_NAMES = {"1": "R-routed", "2": "R-nat"}

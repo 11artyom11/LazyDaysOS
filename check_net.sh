@@ -50,7 +50,7 @@ if [ "$LAZY_IN_NETNS" != 1 ]; then
         for scenario in $SCENARIOS; do
             for pcap in qemu_${scenario}_lan.pcap qemu_${scenario}_wan.pcap; do
                 frames=$(tcpdump -nn -r $pcap 2>/dev/null | wc -l)
-                bad=$(tcpdump -nn -vv -r $pcap 2>/dev/null | grep -ciE 'bad cksum|bad udp cksum|wrong|incorrect')
+                bad=$(tcpdump -nn -vv -r $pcap 2>/dev/null | grep -ciE 'bad cksum|bad udp cksum|incorrect ->|wrong icmp cksum')
                 if [ "$frames" -eq 0 ]; then
                     echo "[ERROR] no frames captured in $pcap"
                     status=1
@@ -161,7 +161,7 @@ wan() { nsenter --target $WAN_PID --net "$@"; }
 # ---------------------------------------------------------------- static ----
 
 scenario_static() {
-    start_topology "eth0=$ROUTER_LAN/24 eth1=$ROUTER_WAN/24 route=192.168.50.0/24,$WAN_HOST udp_echo"
+    start_topology "eth0=$ROUTER_LAN/24 eth1=$ROUTER_WAN/24 route=192.168.50.0/24,$WAN_HOST udp_echo http"
 
     echo "--- the router as a host"
     check_ping "ping 5 x 56 bytes" "0%" ping -c 5 -i 0.2 -W 3 $ROUTER_LAN
@@ -236,6 +236,13 @@ for i in range(2000):
     else
         fail "forwarded UDP: $received of 2000 datagrams arrived"
     fi
+
+    echo "--- management password when none is configured"
+    pw=$(grep -oE 'admin password: [a-z2-9]{12}' $LOG | cut -d' ' -f3)
+    check_output "a random 12-character password is printed on the console at boot" "^[a-z2-9]{12}$" echo "$pw"
+    check_output "the API refuses requests without it and accepts it" "^401 200$" sh -c \
+        "curl -s --max-time 5 -o /dev/null -w '%{http_code} ' http://$ROUTER_LAN/api/stats;
+         curl -s -u 'admin:$pw' --max-time 5 -o /dev/null -w '%{http_code}' http://$ROUTER_LAN/api/stats"
 }
 
 # ------------------------------------------------------------------ home ----
@@ -343,7 +350,9 @@ scenario_home() {
     chmod +x $UDHCPC_SCRIPT
 
     WAN_ROUTE_BACK=no
-    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600 nat=eth1 http"
+    ADMIN_PW=correct-horse-42
+    export API_AUTH="Basic $(printf 'admin:%s' "$ADMIN_PW" | base64)"
+    start_topology "eth0=$ROUTER_LAN/24 eth1=dhcp dhcpd=eth0,10.0.9.100,10.0.9.150 dhcp_lease=600 nat=eth1 http admin_password=$ADMIN_PW"
     wan dnsmasq --no-daemon --conf-file=/dev/null --user=root --port=0 \
         --interface=tap1 --bind-interfaces --dhcp-authoritative \
         --dhcp-range=10.0.8.100,10.0.8.150,10m --dhcp-host=$ROUTER_WAN_MAC,$ROUTER_WAN \
@@ -481,7 +490,7 @@ for i in range(3):
     check_output "GET / serves the dashboard: gzip, identical to www/index.html" "^200 gzip identical$" sh -c \
         "curl -s --compressed --max-time 5 -D $TMP/headers -o $TMP/index -w '%{http_code} ' $API/ &&
          grep -qi '^content-encoding: gzip' $TMP/headers && printf 'gzip ' && cmp -s $TMP/index www/index.html && echo identical"
-    curl -s --max-time 5 $API/api/stats > $TMP/stats.json
+    curl -s -u admin:$ADMIN_PW --max-time 5 $API/api/stats > $TMP/stats.json
     check_output "/api/stats is valid JSON describing the router" "^consistent$" python3 - $TMP/stats.json <<'PY'
 import json, sys
 s = json.load(open(sys.argv[1]))
@@ -507,7 +516,7 @@ if s['tcp']['active'] < 1 or s['system']['uptime_ms'] <= s['system']['ready_ms']
     problems.append('system/tcp %r %r' % (s['system'], s['tcp']))
 print('; '.join(problems) or 'consistent')
 PY
-    curl -s --max-time 5 "$API/api/events" > $TMP/events.json
+    curl -s -u admin:$ADMIN_PW --max-time 5 "$API/api/events" > $TMP/events.json
     check_output "/api/events logs leases, devices and the WAN lease" "^logged$" python3 -c "
 import json
 e = json.load(open('$TMP/events.json'))
@@ -516,15 +525,16 @@ need = ['dhcp: 10.0.9.1', 'lazy-laptop', 'client: new device 10.0.9.1 on eth0', 
 missing = [n for n in need if n not in texts]
 print('missing %s in %s' % (missing, texts[:300]) if missing else 'logged')"
     last=$(python3 -c "import json; print(json.load(open('$TMP/events.json'))[-1]['id'])")
-    check_output "/api/events?since=<last id> returns nothing new" "^\[\]$" curl -s --max-time 5 "$API/api/events?since=$last"
+    check_output "/api/events?since=<last id> returns nothing new" "^\[\]$" curl -s -u admin:$ADMIN_PW --max-time 5 "$API/api/events?since=$last"
 
     # CPU load (time not spent asleep in hlt, per one-second window): low after a quiet
     # second, clearly higher while a ping flood is forwarded through the NAT
     check_output "/api/stats CPU load: low when idle, higher under a forwarded ping flood" "^tracks load " \
         python3 - "$API" "$WAN_HOST" <<'PY'
-import json, subprocess, sys, time, urllib.request
+import json, os, subprocess, sys, time, urllib.request
 api, target = sys.argv[1], sys.argv[2]
-stats = lambda: json.load(urllib.request.urlopen(api + '/api/stats', timeout=5))
+auth = {'Authorization': os.environ['API_AUTH']}
+stats = lambda: json.load(urllib.request.urlopen(urllib.request.Request(api + '/api/stats', headers=auth), timeout=5))
 time.sleep(2.2)                       # a whole window with nothing but this request in it
 idle = stats()['cpu']['busy_permille']
 flood = subprocess.Popen(['ping', '-f', '-q', '-s', '1000', '-w', '4', target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -538,15 +548,67 @@ print(('tracks load (' if ok else 'wrong: ') + 'idle %d, under flood %d permille
 PY
 
     check_ping "second LAN host reaches the WAN" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
-    check_output "POST /api/block?ip=10.0.9.3" '"blocked":true' curl -s --max-time 5 -X POST "$API/api/block?ip=10.0.9.3"
+    check_output "POST /api/block?ip=10.0.9.3" '"blocked":true' curl -s -u admin:$ADMIN_PW --max-time 5 -X POST "$API/api/block?ip=10.0.9.3"
     check_ping "blocked device can't reach the WAN" "100%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 1 $WAN_HOST
     check_ping "other devices are unaffected" "0%" ping -c 3 -i 0.2 -W 2 $WAN_HOST
     check_output "blocked device can still open the dashboard" "^200$" \
-        curl -s --max-time 5 --interface 10.0.9.3 -o /dev/null -w '%{http_code}' $API/api/stats
-    check_output "stats show the device as blocked" '"ip":"10.0.9.3"[^}]*"blocked":true' curl -s --max-time 5 $API/api/stats
-    check_output "POST /api/unblock?ip=10.0.9.3" '"blocked":false' curl -s --max-time 5 -X POST "$API/api/unblock?ip=10.0.9.3"
+        curl -s -u admin:$ADMIN_PW --max-time 5 --interface 10.0.9.3 -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "stats show the device as blocked" '"ip":"10.0.9.3"[^}]*"blocked":true' curl -s -u admin:$ADMIN_PW --max-time 5 $API/api/stats
+    check_output "POST /api/unblock?ip=10.0.9.3" '"blocked":false' curl -s -u admin:$ADMIN_PW --max-time 5 -X POST "$API/api/unblock?ip=10.0.9.3"
     check_ping "unblocked device reaches the WAN again" "0%" ping -I 10.0.9.3 -c 3 -i 0.2 -W 2 $WAN_HOST
-    check_output "block and unblock were logged" "unblocked 10.0.9.3" curl -s --max-time 5 "$API/api/events?since=$last"
+    check_output "block and unblock were logged" "unblocked 10.0.9.3" curl -s -u admin:$ADMIN_PW --max-time 5 "$API/api/events?since=$last"
+
+    echo "--- login, CSRF and DNS rebinding"
+    check_output "API without credentials: 401" "^401$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "API with a wrong password: 401" "^401$" \
+        curl -s -u admin:wrong-password --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "the dashboard page itself needs no login (it shows the login form)" "^200$" \
+        curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/
+    check_output "login sets an HttpOnly, SameSite=Strict session cookie" \
+        "^Set-Cookie: lazydays_session=[0-9a-f]{32}; Path=/; HttpOnly; SameSite=Strict$" sh -c \
+        "curl -s --max-time 5 -c $TMP/jar -D - -o $TMP/login.json --data-urlencode 'password=$ADMIN_PW' $API/api/login | tr -d '\r'"
+    csrf=$(python3 -c "import json; print(json.load(open('$TMP/login.json')).get('csrf'))" 2>/dev/null)
+    check_output "the session cookie works" "^200$" curl -s --max-time 5 -b $TMP/jar -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "POST in a session without the CSRF token: 403" "^403$" \
+        curl -s --max-time 5 -b $TMP/jar -o /dev/null -w '%{http_code}' -X POST "$API/api/unblock?ip=10.0.9.3"
+    check_output "POST in a session with a wrong CSRF token: 403" "^403$" curl -s --max-time 5 -b $TMP/jar \
+        -H "X-CSRF-Token: 0123456789abcdef0123456789abcdef" -o /dev/null -w '%{http_code}' -X POST "$API/api/unblock?ip=10.0.9.3"
+    check_output "POST in a session with its CSRF token: 200" "^200$" curl -s --max-time 5 -b $TMP/jar \
+        -H "X-CSRF-Token: $csrf" -o /dev/null -w '%{http_code}' -X POST "$API/api/unblock?ip=10.0.9.3"
+    check_output "cross-site POST (Origin of another site): 403" "^403$" curl -s -u admin:$ADMIN_PW --max-time 5 \
+        -H "Origin: http://evil.example" -o /dev/null -w '%{http_code}' -X POST "$API/api/unblock?ip=10.0.9.3"
+    check_output "DNS rebinding (Host of another site, right password): 421" "^421$" curl -s -u admin:$ADMIN_PW --max-time 5 \
+        -H "Host: evil.example" -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "request without Host: 400" "^400$" curl -s -u admin:$ADMIN_PW --max-time 5 -H "Host:" -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "responses forbid framing and MIME sniffing" "^3$" sh -c \
+        "curl -s --max-time 5 -D - -o /dev/null $API/ | tr -d '\r' |
+         grep -ciE '^(x-frame-options: deny|x-content-type-options: nosniff|content-security-policy: .*frame-ancestors .none.)'"
+    check_output "logout ends the session" "^200 401$" sh -c \
+        "curl -s --max-time 5 -b $TMP/jar -H 'X-CSRF-Token: $csrf' -o /dev/null -w '%{http_code} ' -X POST $API/api/logout;
+         curl -s --max-time 5 -b $TMP/jar -o /dev/null -w '%{http_code}' $API/api/stats"
+    # Guessing, from the second LAN address so its lockout doesn't affect the rest
+    check_output "5 wrong passwords lock the address out; then even the right one gets 429" "^401 401 401 401 401 429$" sh -c \
+        "for pw in a b c d e '$ADMIN_PW'; do curl -s --interface 10.0.9.3 --max-time 5 -o /dev/null -w '%{http_code} ' \
+            --data-urlencode password=\$pw $API/api/login; done | sed 's/ \$//'"
+    check_output "the lockout says when to retry" "^Retry-After: (5[0-9]|60)$" sh -c \
+        "curl -s --interface 10.0.9.3 --max-time 5 -D - -o /dev/null --data-urlencode password=x $API/api/login | tr -d '\r'"
+    check_output "other addresses can still log in during the lockout" "^200$" \
+        curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
+    check_output "a new password must have 8-64 characters" "^400$" curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code}' \
+        --data-urlencode "current=$ADMIN_PW" --data-urlencode "new=short" $API/api/password
+    check_output "password change: the old password stops working, the new one works" "^200 401 200$" sh -c \
+        "curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code} ' \
+            --data-urlencode 'current=$ADMIN_PW' --data-urlencode 'new=new-pass-1234' $API/api/password;
+         curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code} ' $API/api/stats;
+         curl -s -u admin:new-pass-1234 --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats"
+    check_output "password changed back" "^200$" curl -s -u admin:new-pass-1234 --max-time 5 -o /dev/null -w '%{http_code}' \
+        --data-urlencode "current=new-pass-1234" --data-urlencode "new=$ADMIN_PW" $API/api/password
+    check_output "/api/stats counts logins, failures, lockouts, CSRF and Host rejections" "^counted " python3 -c "
+import json, urllib.request
+s = json.load(urllib.request.urlopen(urllib.request.Request('$API/api/stats', headers={'Authorization': '$API_AUTH'}), timeout=5))
+a, h = s['auth'], s['http']
+ok = a['logins'] >= 1 and a['failures'] >= 7 and a['lockouts'] >= 1 and a['locked_rejected'] >= 2 and a['csrf_rejected'] >= 2 and h['wrong_host'] >= 1
+print(('counted ' if ok else 'wrong: ') + json.dumps(a) + ' wrong_host %d' % h['wrong_host'])"
 
     echo "--- management is unreachable from the WAN"
     check_output "WAN can't connect to the dashboard on the WAN address (SYN dropped)" "^silently dropped$" \
@@ -562,7 +624,7 @@ PY
     check_output "unknown path: 404" "^404$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/nope
     check_output "wrong method: 405" "^405 405$" sh -c \
         "curl -s --max-time 5 -o /dev/null -w '%{http_code} ' -X DELETE $API/api/stats; curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/block"
-    check_output "bad parameter: 400" "^400$" curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X POST "$API/api/block?ip=999.1.1.1"
+    check_output "bad parameter: 400" "^400$" curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code}' -X POST "$API/api/block?ip=999.1.1.1"
     check_output "raw protocol errors: 400, 431, 413" "^400 431 413$" python3 -c "
 import socket
 def ask(raw):
@@ -583,7 +645,7 @@ import threading, urllib.request
 codes = []
 def get():
     try:
-        codes.append(urllib.request.urlopen('$API/api/stats', timeout=15).status)
+        codes.append(urllib.request.urlopen(urllib.request.Request('$API/api/stats', headers={'Authorization': '$API_AUTH'}), timeout=15).status)
     except Exception as e:
         codes.append(repr(e))
 threads = [threading.Thread(target=get) for _ in range(30)]
@@ -595,14 +657,14 @@ print('30 x 200' if codes.count(200) == 30 else codes)"
     # From the WAN: must not take a single connection slot
     check_output "WAN SYN flood" "^sent " attack wan syn-flood $ROUTER_WAN 80 2 1000 203.0.113.
     check_output "LAN still opens the dashboard right after the WAN flood" "^200$" \
-        curl -s --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
+        curl -s -u admin:$ADMIN_PW --max-time 5 -o /dev/null -w '%{http_code}' $API/api/stats
     # From the LAN: half-open connections must not lock real clients out, and the
     # router's ARP requests for ~250 nonexistent hosts must not push out real ones
     attack syn-flood $ROUTER_LAN 80 6 1000 10.0.9. > $TMP/lan_flood &
     flood=$!
     sleep 1
     check_output "LAN clients get the dashboard during a LAN SYN flood" "^200 200 200$" sh -c \
-        "for i in 1 2 3; do curl -s --max-time 4 -o /dev/null -w '%{http_code}' $API/api/stats; [ \$i = 3 ] || printf ' '; sleep 0.5; done; echo"
+        "for i in 1 2 3; do curl -s -u admin:$ADMIN_PW --max-time 4 -o /dev/null -w '%{http_code}' $API/api/stats; [ \$i = 3 ] || printf ' '; sleep 0.5; done; echo"
     wait $flood
     check_output "LAN SYN flood" "^sent " cat $TMP/lan_flood
     # From the WAN segment, pings from nonexistent neighbours: the router's replies need
@@ -616,7 +678,7 @@ print('30 x 200' if codes.count(200) == 30 else codes)"
     check_output "WAN ping flood" "^sent " cat $TMP/wan_ping_flood
     check_output "/api/stats counts filtered SYNs and SYN cookies" "^counted " python3 -c "
 import json, urllib.request
-s = json.load(urllib.request.urlopen('$API/api/stats', timeout=5))
+s = json.load(urllib.request.urlopen(urllib.request.Request('$API/api/stats', headers={'Authorization': '$API_AUTH'}), timeout=5))
 t = s['tcp']
 ok = t['filtered'] >= 1000 and t['syn_cookies_sent'] >= 1000 and t['syn_cookies_accepted'] >= 3 and s['ipv4']['wrong_port'] >= 2
 print(('counted ' if ok else 'wrong: ') + 'filtered %d, cookies sent %d, accepted %d, half-open evicted %d, refused %d, wrong_port %d'

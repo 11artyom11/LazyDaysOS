@@ -1,4 +1,5 @@
 #include "api.h"
+#include "auth.h"
 #include "http.h"
 #include "net.h"
 #include "netdev.h"
@@ -192,6 +193,16 @@ static void api$$stats(const struct http_request* req, struct http_response* res
     api$$key_uint(&sb, "requests", http_stats.requests, true);
     api$$key_uint(&sb, "errors", http_stats.errors, false);
     api$$key_uint(&sb, "forbidden", http_stats.forbidden, false);
+    api$$key_uint(&sb, "wrong_host", http_stats.wrong_host, false);
+    sb_char(&sb, '}');
+
+    sb_json_key(&sb, "auth", false);
+    sb_char(&sb, '{');
+    api$$key_uint(&sb, "logins", auth_stats.logins, true);
+    api$$key_uint(&sb, "failures", auth_stats.failures, false);
+    api$$key_uint(&sb, "lockouts", auth_stats.lockouts, false);
+    api$$key_uint(&sb, "locked_rejected", auth_stats.locked_rejected, false);
+    api$$key_uint(&sb, "csrf_rejected", auth_stats.csrf_rejected, false);
     sb_char(&sb, '}');
     sb_char(&sb, '}');
 
@@ -247,10 +258,12 @@ static void api$$unblock(const struct http_request* req, struct http_response* r
 
 bool api_start(uint16_t port)
 {
-    return http_route("GET", "/", api$$index) &&
-           http_route("GET", "/api/stats", api$$stats) &&
-           http_route("GET", "/api/events", api$$events) &&
-           http_route("POST", "/api/block", api$$block) &&
-           http_route("POST", "/api/unblock", api$$unblock) &&
+    /* The page itself is public (it shows the login form); its data is not */
+    return auth_start() &&
+           http_route("GET", "/", api$$index, HTTP_PUBLIC) &&
+           http_route("GET", "/api/stats", api$$stats, 0) &&
+           http_route("GET", "/api/events", api$$events, 0) &&
+           http_route("POST", "/api/block", api$$block, 0) &&
+           http_route("POST", "/api/unblock", api$$unblock, 0) &&
            http_start(port);
 }
