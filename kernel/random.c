@@ -1,4 +1,5 @@
 #include "random.h"
+#include <stdbool.h>
 #include <kio.h>
 #include <util.h>
 

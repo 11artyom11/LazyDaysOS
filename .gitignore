@@ -10,3 +10,4 @@ __pycache__
 fuzz/build
 fuzz/findings
 mutate-current*
+fuzz/work

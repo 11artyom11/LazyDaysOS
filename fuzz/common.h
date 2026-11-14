@@ -56,6 +56,10 @@ extern struct fuzz_frame fuzz_tx[FUZZ_TX_MAX];
 extern size_t fuzz_tx_count;
 extern size_t fuzz_boot_tx;             /* frames sent during boot: fuzz_tx[0..fuzz_boot_tx) until the first input sends */
 
+/* Hash of every frame the router sent during the last finished input: the same
+   input must always give the same hash (the replay driver checks) */
+extern uint64_t fuzz_last_digest;
+
 /* Boot the stack once with this command line (with nothing but the fuzz password
    and addresses decided by the target), then snapshot it */
 void fuzz_boot(const char* cmdline);

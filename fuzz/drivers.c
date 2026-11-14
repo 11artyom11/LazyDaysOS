@@ -2,8 +2,10 @@
     main() for builds without libFuzzer (gcc with ASan/UBSan, or gcov coverage).
 
     replay mode (default):   <target> [--fork] FILE|DIR...
-        runs every input once; with --fork each input runs in a child process
-        (needed for gcov, whose counters live in the restored sections)
+        runs every input twice and checks that the router sent exactly the same
+        frames both times (the per-input reset works); with --fork each input
+        runs once in a child process (needed for gcov, whose counters live in
+        the restored sections)
     mutate mode (-DFUZZ_MUTATOR):  <target> ITERATIONS DIR...
         a plain random mutator over the corpus, no coverage feedback: a smoke
         test until libFuzzer (clang) is available. Writes each input to
@@ -22,6 +24,7 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 extern bool fuzz_no_restore;
+extern uint64_t fuzz_last_digest;
 
 struct input { uint8_t* data; size_t size; char* name; };
 static struct input* inputs;
@@ -95,7 +98,15 @@ int main(int argc, char** argv)
     }
     for (size_t i = 0; i < ninputs; i++) {
         if (!fork_each) {
+            /* Twice: the reset must make the router behave identically */
             LLVMFuzzerTestOneInput(inputs[i].data, inputs[i].size);
+            uint64_t first = fuzz_last_digest;
+            LLVMFuzzerTestOneInput(inputs[i].data, inputs[i].size);
+            if (fuzz_last_digest != first) {
+                fprintf(stderr, "input %s: the router sent different frames the second time "
+                        "(state escaped the per-input reset)\n", inputs[i].name);
+                return 1;
+            }
             continue;
         }
         pid_t pid = fork();

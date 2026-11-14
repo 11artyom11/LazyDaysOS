@@ -14,6 +14,8 @@ struct fuzz_frame fuzz_tx[FUZZ_TX_MAX];
 size_t fuzz_tx_count;
 size_t fuzz_boot_tx;
 bool fuzz_no_restore = false;           /* replay --fork: each input runs in its own process */
+uint64_t fuzz_last_digest;
+static uint64_t fuzz$digest = 14695981039346656037ULL;
 
 /* The stack's globals (fuzz/Makefile renames its objects' .data and .bss) */
 extern char __start_fuzz_state_data[] __attribute__((weak));
@@ -61,6 +63,10 @@ static bool fuzz$$transmit(struct netdev* dev, const void* frame, size_t len)
     f->len = len;
     memcpy(f->data, frame, len);
     fuzz_tx_count++;
+    const uint8_t* b = frame;
+    for (size_t i = 0; i < len; i++) {
+        fuzz$digest = (fuzz$digest ^ b[i]) * 1099511628211ULL;      /* FNV-1a */
+    }
     return true;
 }
 
@@ -349,6 +355,7 @@ void fuzz_boot(const char* cmdline)
     fuzz$boot_now = fuzz_now_ms;
     fuzz_boot_tx = fuzz_tx_count < FUZZ_TX_MAX ? fuzz_tx_count : FUZZ_TX_MAX;
     fuzz_tx_count = 0;
+    fuzz$digest = 14695981039346656037ULL;  /* inputs are compared without the boot traffic */
 }
 
 void fuzz_finish(void)
@@ -369,6 +376,8 @@ void fuzz_finish(void)
         fprintf(stderr, "FUZZ: the stack still holds heap memory from more than 10 idle minutes ago (leak)\n");
         abort();
     }
+    fuzz_last_digest = fuzz$digest;
+    fuzz$digest = 14695981039346656037ULL;
     if (fuzz_no_restore) {
         return;
     }
